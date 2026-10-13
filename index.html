@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Ludo</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main>
+  <section id="lobby">
+    <h1>Ludo</h1>
+    <p class="sub">Practice mode. No money involved yet.</p>
+    <div class="modes">
+      <button id="m2"><b>You vs 1 bot</b><span>Quick head-to-head</span></button>
+      <button id="m4"><b>You vs 3 bots</b><span>Full four-player board</span></button>
+      <button id="m4p"><b>4 players, one device</b><span>Pass the phone around</span></button>
+    </div>
+    <details>
+      <summary>House rules</summary>
+      <ul>
+        <li><b>Leaving base:</b> roll a 6. Sixes and captures give an extra turn; three sixes in a row lose the turn.</li>
+        <li><b>Blockade:</b> 2+ of your pieces on one square (not a star) block everyone else. One blockade per player.</li>
+        <li><b>Breaking a blockade:</b> a group of the same size right behind it, rolling the exact number. This works from a star square too. You can open your own any time, but must if no other piece can move.</li>
+        <li><b>Home lane:</b> locked 🔒 until you capture an opponent piece. Until then your pieces keep circling.</li>
+      </ul>
+    </details>
+  </section>
+  <section id="game" hidden>
+    <div class="bar"><div id="chips"></div><button id="menu">Menu</button></div>
+    <div id="status"></div>
+    <div class="wrap">
+      <svg id="board" viewBox="0 0 15 15" role="img" aria-label="Ludo board"></svg>
+      <div id="bigdie" class="bigdie" hidden></div>
+    </div>
+    <div class="dock"><button id="roll" aria-label="Roll the dice"><span class="die" id="die"></span></button></div>
+    <div id="result" hidden>
+      <div class="card"><h2 id="rtitle"></h2><p id="rorder"></p>
+        <button id="again">Play again</button><button id="home">Menu</button></div>
+    </div>
+  </section>
+</main>
+<script type="module" src="app.js"></script>
+</body>
+</html>
