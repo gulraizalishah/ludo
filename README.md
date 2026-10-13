@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # Ludo
 
 Browser Ludo game with house rules (blockades, capture-to-unlock home lane, star-square attacks).
@@ -20,3 +21,7 @@ See the "House rules" section on the lobby screen.
 
 ## Secrets
 Never commit `.env` files or Supabase service-role keys.
+=======
+"# ludo-game" 
+>>>>>>> 7c472d7197b7a48545a3eb9357be201fb317e9b5
+"# ludo-game" 
