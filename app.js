@@ -14,26 +14,36 @@ const $ = (id) => document.getElementById(id);
 const el = (t, a, p) => { const e = document.createElementNS(NS, t); for (const k in a) e.setAttribute(k, a[k]); p && p.appendChild(e); return e; };
 const svg = $('board'), tokEls = {}, baseEl = {};
 const cap = (c) => c[0].toUpperCase() + c.slice(1);
-let cfg;
+let cfg, me = null, viewColor = null, rotNow = 0, root;
+const ROT = { blue: 0, yellow: 90, green: 180, red: 270 };   // degrees to bring a colour to the bottom-left
+const UNR = { red: [-1, -1], green: [1, -1], yellow: [1, 1], blue: [-1, 1] };
+const ORDER = ['red', 'green', 'yellow', 'blue'], OPP = { red: 'yellow', yellow: 'red', green: 'blue', blue: 'green' };
+function setView(c) {                       // turn the board the shortest way, smoothly
+  if (c === viewColor) return;
+  viewColor = c; rotNow += ((ROT[c] - rotNow) % 360 + 540) % 360 - 180;
+  root.style.transform = `rotate(${rotNow}deg)`;
+}
 let S, bots = new Set(), note = '';
 
 function buildBoard() {
   svg.innerHTML = '';
+  root = el('g', { class: 'root' }, svg);
+  viewColor = me ?? S.colors[S.turn]; rotNow = ROT[viewColor]; root.style.transform = `rotate(${rotNow}deg)`;
   for (const c in ORIGIN) {
     const [x, y] = ORIGIN[c];
-    baseEl[c] = el('rect', { x, y, width: 6, height: 6, rx: .6, fill: COL[c] }, svg);
-    el('rect', { x: x + 1, y: y + 1, width: 4, height: 4, rx: .5, fill: '#fff' }, svg);
+    baseEl[c] = el('rect', { x, y, width: 6, height: 6, rx: .6, fill: COL[c] }, root);
+    el('rect', { x: x + 1, y: y + 1, width: 4, height: 4, rx: .5, fill: '#fff' }, root);
   }
   TRACK.forEach(([x, y], i) => {
     const start = Object.entries({ red: 0, green: 13, yellow: 26, blue: 39 }).find(([, v]) => v === i);
-    el('rect', { x, y, width: 1, height: 1, fill: start ? COL[start[0]] : '#fff', stroke: '#c9ced6', 'stroke-width': .04 }, svg);
-    if (SAFE.includes(i) && !start) el('text', { x: x + .5, y: y + .72, 'text-anchor': 'middle', 'font-size': .7, fill: '#9aa3b2' }, svg).textContent = '★';
+    el('rect', { x, y, width: 1, height: 1, fill: start ? COL[start[0]] : '#fff', stroke: '#c9ced6', 'stroke-width': .04 }, root);
+    if (SAFE.includes(i) && !start) el('text', { x: x + .5, y: y + .72, 'text-anchor': 'middle', 'font-size': .7, fill: '#9aa3b2' }, root).textContent = '★';
   });
-  for (const c in HOME) HOME[c].forEach(([x, y]) => el('rect', { x, y, width: 1, height: 1, fill: COL[c], opacity: .85, stroke: '#fff', 'stroke-width': .04 }, svg));
+  for (const c in HOME) HOME[c].forEach(([x, y]) => el('rect', { x, y, width: 1, height: 1, fill: COL[c], opacity: .85, stroke: '#fff', 'stroke-width': .04 }, root));
   [['red','6,6 6,9 7.5,7.5'],['green','6,6 9,6 7.5,7.5'],['yellow','9,6 9,9 7.5,7.5'],['blue','6,9 9,9 7.5,7.5']]
-    .forEach(([c, pts]) => el('polygon', { points: pts, fill: COL[c] }, svg));
+    .forEach(([c, pts]) => el('polygon', { points: pts, fill: COL[c] }, root));
   for (const c of S.colors) for (let i = 0; i < 4; i++) {
-    const g = el('g', { class: 'tok' }, svg);
+    const g = el('g', { class: 'tok' }, root);
     el('circle', { r: .38, fill: COL[c], stroke: '#fff', 'stroke-width': .09 }, g);
     el('circle', { r: .14, fill: '#fff', opacity: .55 }, g);
     g.addEventListener('click', () => onToken(c, i));
@@ -50,6 +60,7 @@ function pos(c, p, i) {
 
 function draw() {
   const cur = S.colors[S.turn], legal = !busy && S.dice != null ? getLegalMoves(S, S.dice) : [];
+  setView(me ?? cur);
   const P = {}, cnt = {}, used = {};
   const bl = new Set(blockades(S).flatMap((b) => b.ids.map((i) => b.color + i)));
   for (const c of S.colors) S.tokens[c].forEach((p, i) => {
@@ -94,25 +105,26 @@ function step() {
   if (isOver(S)) return;
   if (bots.has(S.colors[S.turn])) setTimeout(() => (S.dice == null ? doRoll() : doMove(botPick(S, S.dice))), 650);
 }
-// The die is thrown from the current player's corner and bounces to the centre of the board
-const CORNER = { red: [-1, -1], green: [1, -1], yellow: [1, 1], blue: [-1, 1] };
+// A 3D cube is thrown from the roller's corner and rolls (end over end) to the middle of the board
+const FACE = { 1: 'rotateX(0deg)', 2: 'rotateY(-90deg)', 3: 'rotateX(-90deg)', 4: 'rotateX(90deg)', 5: 'rotateY(90deg)', 6: 'rotateY(180deg)' };
 async function tumble(d, color) {
-  const big = $('bigdie'), k = $('board').clientWidth * .3, [kx, ky] = CORNER[color];
-  const at = (t, s, r) => `translate(${kx * k * (1 - t)}px, ${ky * k * (1 - t)}px) rotate(${r}deg) scale(${s})`;
+  const big = $('bigdie'), k = $('board').clientWidth * .3;
+  const th = (ROT[viewColor] * Math.PI) / 180, [ux, uy] = UNR[color];
+  const kx = Math.round(ux * Math.cos(th) - uy * Math.sin(th)), ky = Math.round(ux * Math.sin(th) + uy * Math.cos(th));
   big.style.setProperty('--pip', COL[color]);
-  big.innerHTML = pipsHTML(1 + Math.floor(Math.random() * 6)); big.hidden = false;
+  big.innerHTML = '<div class="cube">' + [1, 2, 3, 4, 5, 6].map((n) => `<div class="face f${n}">${pipsHTML(n)}</div>`).join('') + '</div>';
+  big.hidden = false;
+  const at = (t, z, deg) => `perspective(700px) translate3d(${kx * k * (1 - t)}px, ${ky * k * (1 - t)}px, ${z}px) rotate3d(${ky}, ${-kx}, 0, ${deg}deg) ${FACE[d]}`;
   const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
-  const flight = big.animate([
-    { transform: at(0, .55, 0), offset: 0 },
-    { transform: at(.45, 1.3, 300), offset: .3 },                       // thrown into the air
-    { transform: at(.55, 1, 430), offset: .45, easing: 'ease-out' },    // first bounce
-    { transform: at(.85, 1.15, 600), offset: .68 },
-    { transform: at(.95, 1, 690), offset: .82, easing: 'ease-out' },    // second, smaller bounce
-    { transform: at(1, 1, 720), offset: 1 },
-  ], { duration: reduce ? 1 : 950, easing: 'linear', fill: 'forwards' });
-  const flicker = setInterval(() => { big.innerHTML = pipsHTML(1 + Math.floor(Math.random() * 6)); }, 80);
-  await flight.finished; clearInterval(flicker);
-  big.innerHTML = pipsHTML(d); await sleep(500); big.hidden = true; flight.cancel();
+  const flight = big.firstChild.animate([
+    { transform: at(0, 0, 0), offset: 0, easing: 'ease-out' },
+    { transform: at(.42, 110, 260), offset: .28, easing: 'ease-in' },   // thrown up
+    { transform: at(.55, 0, 360), offset: .45, easing: 'ease-out' },    // lands, rolls on
+    { transform: at(.85, 55, 560), offset: .65, easing: 'ease-in' },
+    { transform: at(.95, 0, 680), offset: .8, easing: 'ease-out' },
+    { transform: at(1, 0, 720), offset: 1 },
+  ], { duration: reduce ? 1 : 1000, easing: 'linear', fill: 'forwards' });
+  await flight.finished; await sleep(550); big.hidden = true;
 }
 async function doRoll() {
   if (S.dice != null || busy) return;
@@ -145,16 +157,18 @@ function onToken(c, i) {
   if (getLegalMoves(S, S.dice).includes(i)) doMove(i);
 }
 
-function start(colors, botColors) {
+function start(colors, botColors, who = null) {
   gid++; busy = false; $('bigdie').hidden = true; S = createGame(colors); bots = new Set(botColors);
-  setDie(0); cfg = [colors, botColors];
+  setDie(0); cfg = [colors, botColors, who]; me = who;
   $('lobby').hidden = true; $('game').hidden = false;
   buildBoard(); step();
 }
 $('roll').onclick = () => doRoll();
 $('menu').onclick = () => { $('game').hidden = true; $('lobby').hidden = false; };
-$('m2').onclick = () => start(['red', 'yellow'], ['yellow']);
-$('m4').onclick = () => start(['red', 'green', 'yellow', 'blue'], ['green', 'yellow', 'blue']);
+let mine = 'red';
+document.querySelectorAll('.pick button').forEach((b) => { b.onclick = () => { mine = b.dataset.c; document.querySelectorAll('.pick button').forEach((x) => x.setAttribute('aria-pressed', x === b)); }; });
+$('m2').onclick = () => start(ORDER.filter((c) => c === mine || c === OPP[mine]), [OPP[mine]], mine);
+$('m4').onclick = () => start(ORDER, ORDER.filter((c) => c !== mine), mine);
 $('m4p').onclick = () => start(['red', 'green', 'yellow', 'blue'], []);
 
 $('again').onclick = () => start(...cfg);

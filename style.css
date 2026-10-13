@@ -41,11 +41,21 @@ svg { width: 100%; height: auto; display: block; border-radius: 22px; background
 @media (prefers-reduced-motion: reduce) { .tok, .tok.can, .die.shake { transition: none; animation: none; } }
 
 .wrap { position: relative; }
-.bigdie { position: absolute; left: 50%; top: 50%; width: 78px; height: 78px; margin: -39px 0 0 -39px; background: #fff; border-radius: 18px; z-index: 3;
-  box-shadow: 0 12px 30px rgba(0,0,0,.55); display: grid; grid-template: repeat(3, 1fr) / repeat(3, 1fr); padding: 12px; place-items: center; pointer-events: none; }
 .bigdie[hidden] { display: none; }
-.bigdie b { width: 13px; height: 13px; border-radius: 50%; } .bigdie b.on { background: var(--pip, #1b2540); }
 .tok.hop circle { animation: hop .18s ease-out; transform-box: fill-box; transform-origin: center; }
 @keyframes hop { 50% { transform: translateY(-.4px) scale(1.2); } }
 @media (prefers-reduced-motion: reduce) { .tok.hop circle { animation: none; } }
 #result[hidden] { display: none; }
+
+.bigdie { position: absolute; left: 50%; top: 50%; width: 78px; height: 78px; margin: -39px 0 0 -39px; z-index: 3; pointer-events: none; }
+.cube { position: absolute; inset: 0; transform-style: preserve-3d; }
+.face { position: absolute; inset: 0; background: #fff; border-radius: 14px; backface-visibility: hidden; display: grid; grid-template: repeat(3, 1fr) / repeat(3, 1fr);
+  padding: 12px; place-items: center; box-shadow: inset 0 0 0 1px #d3d9e6, inset 0 -7px 12px rgba(0,0,0,.09); }
+.face b { width: 13px; height: 13px; border-radius: 50%; } .face b.on { background: var(--pip, #1b2540); }
+.f1 { transform: translateZ(39px); } .f6 { transform: rotateY(180deg) translateZ(39px); } .f2 { transform: rotateY(90deg) translateZ(39px); }
+.f5 { transform: rotateY(-90deg) translateZ(39px); } .f3 { transform: rotateX(90deg) translateZ(39px); } .f4 { transform: rotateX(-90deg) translateZ(39px); }
+.root { transform-origin: 7.5px 7.5px; transition: transform .55s ease; }
+.pick { display: flex; align-items: center; gap: 10px; margin: 0 0 14px; color: var(--mute); font-weight: 600; } .pick span { flex: 1; }
+.pick button { width: 34px; height: 34px; border-radius: 50%; background: var(--c); border: 3px solid transparent; padding: 0; }
+.pick button[aria-pressed="true"] { border-color: #fff; box-shadow: 0 0 0 2px var(--c); }
+@media (prefers-reduced-motion: reduce) { .root { transition: none; } }
