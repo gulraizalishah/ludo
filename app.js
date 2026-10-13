@@ -28,7 +28,7 @@ let S, bots = new Set(), note = '';
 function buildBoard() {
   svg.innerHTML = '';
   root = el('g', { class: 'root' }, svg);
-  viewColor = me ?? S.colors[S.turn]; rotNow = ROT[viewColor]; root.style.transform = `rotate(${rotNow}deg)`;
+  viewColor = me ?? 'blue'; rotNow = ROT[viewColor]; root.style.transform = `rotate(${rotNow}deg)`;
   for (const c in ORIGIN) {
     const [x, y] = ORIGIN[c];
     baseEl[c] = el('rect', { x, y, width: 6, height: 6, rx: .6, fill: COL[c] }, root);
@@ -60,7 +60,7 @@ function pos(c, p, i) {
 
 function draw() {
   const cur = S.colors[S.turn], legal = !busy && S.dice != null ? getLegalMoves(S, S.dice) : [];
-  setView(me ?? cur);
+  if (me) setView(me);   // online/bot games: your colour in front. Shared-screen games: no rotation
   const P = {}, cnt = {}, used = {};
   const bl = new Set(blockades(S).flatMap((b) => b.ids.map((i) => b.color + i)));
   for (const c of S.colors) S.tokens[c].forEach((p, i) => {
@@ -146,7 +146,7 @@ async function doMove(i) {
     movers.forEach((j) => { ovr[c + j] = q; });
     draw();
     movers.forEach((j) => { const g = tokEls[c + j]; g.classList.remove('hop'); void g.getBoundingClientRect(); g.classList.add('hop'); });
-    await sleep(180);
+    await sleep(220);
     if (g0 !== gid) return;
   }
   movers.forEach((j) => delete ovr[c + j]);

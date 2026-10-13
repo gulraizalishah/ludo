@@ -22,7 +22,7 @@ summary { cursor: pointer; font-weight: 600; } ul { margin: 8px 0 4px; padding-l
 #menu { background: var(--panel); border-radius: 12px; padding: 6px 12px; font-weight: 600; }
 #status { min-height: 1.6em; margin: 4px 2px 8px; color: var(--mute); font-weight: 600; }
 svg { width: 100%; height: auto; display: block; border-radius: 22px; background: #fff; border: 7px solid #22345a; box-shadow: 0 14px 40px -12px #000; touch-action: manipulation; }
-.tok { cursor: default; transition: transform .18s linear; filter: drop-shadow(0 .06px .05px rgba(0,0,0,.45)); }
+.tok { cursor: default; transition: transform .22s linear; filter: drop-shadow(0 .06px .05px rgba(0,0,0,.45)); }
 .tok.can { cursor: pointer; animation: pulse .8s ease-in-out infinite; }
 .tok.blk circle:first-child { stroke: #111; stroke-width: .16; }
 @keyframes pulse { 50% { transform: translate(var(--x), var(--y)) scale(1.18); filter: brightness(1.2); } }
@@ -42,8 +42,8 @@ svg { width: 100%; height: auto; display: block; border-radius: 22px; background
 
 .wrap { position: relative; }
 .bigdie[hidden] { display: none; }
-.tok.hop circle { animation: hop .18s ease-out; transform-box: fill-box; transform-origin: center; }
-@keyframes hop { 50% { transform: translateY(-.4px) scale(1.2); } }
+.tok.hop circle { animation: hop .22s ease-in-out; transform-box: fill-box; transform-origin: center; }
+@keyframes hop { 50% { transform: scale(1.5); } }  /* rises toward the viewer and lands: no sideways wobble */
 @media (prefers-reduced-motion: reduce) { .tok.hop circle { animation: none; } }
 #result[hidden] { display: none; }
 
