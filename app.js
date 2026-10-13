@@ -94,17 +94,30 @@ function step() {
   if (isOver(S)) return;
   if (bots.has(S.colors[S.turn])) setTimeout(() => (S.dice == null ? doRoll() : doMove(botPick(S, S.dice))), 650);
 }
-// Big die tumbling in the middle of the board
-async function tumble(d) {
-  const big = $('bigdie');
-  big.hidden = false; big.classList.remove('rolling'); void big.offsetWidth; big.classList.add('rolling');
-  for (let k = 0; k < 8; k++) { big.innerHTML = pipsHTML(1 + Math.floor(Math.random() * 6)); await sleep(85); }
-  big.innerHTML = pipsHTML(d); await sleep(450); big.hidden = true;
+// The die is thrown from the current player's corner and bounces to the centre of the board
+const CORNER = { red: [-1, -1], green: [1, -1], yellow: [1, 1], blue: [-1, 1] };
+async function tumble(d, color) {
+  const big = $('bigdie'), k = $('board').clientWidth * .3, [kx, ky] = CORNER[color];
+  const at = (t, s, r) => `translate(${kx * k * (1 - t)}px, ${ky * k * (1 - t)}px) rotate(${r}deg) scale(${s})`;
+  big.style.setProperty('--pip', COL[color]);
+  big.innerHTML = pipsHTML(1 + Math.floor(Math.random() * 6)); big.hidden = false;
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const flight = big.animate([
+    { transform: at(0, .55, 0), offset: 0 },
+    { transform: at(.45, 1.3, 300), offset: .3 },                       // thrown into the air
+    { transform: at(.55, 1, 430), offset: .45, easing: 'ease-out' },    // first bounce
+    { transform: at(.85, 1.15, 600), offset: .68 },
+    { transform: at(.95, 1, 690), offset: .82, easing: 'ease-out' },    // second, smaller bounce
+    { transform: at(1, 1, 720), offset: 1 },
+  ], { duration: reduce ? 1 : 950, easing: 'linear', fill: 'forwards' });
+  const flicker = setInterval(() => { big.innerHTML = pipsHTML(1 + Math.floor(Math.random() * 6)); }, 80);
+  await flight.finished; clearInterval(flicker);
+  big.innerHTML = pipsHTML(d); await sleep(500); big.hidden = true; flight.cancel();
 }
 async function doRoll() {
   if (S.dice != null || busy) return;
   const g0 = gid; busy = true; draw();
-  const d = rollDice(); await tumble(d);
+  const d = rollDice(); await tumble(d, S.colors[S.turn]);
   if (g0 !== gid) return;
   busy = false; setDie(d);
   const who = S.colors[S.turn], n = roll(S, d);
@@ -133,7 +146,7 @@ function onToken(c, i) {
 }
 
 function start(colors, botColors) {
-  gid++; busy = false; S = createGame(colors); bots = new Set(botColors);
+  gid++; busy = false; $('bigdie').hidden = true; S = createGame(colors); bots = new Set(botColors);
   setDie(0); cfg = [colors, botColors];
   $('lobby').hidden = true; $('game').hidden = false;
   buildBoard(); step();

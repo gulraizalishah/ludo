@@ -44,10 +44,8 @@ svg { width: 100%; height: auto; display: block; border-radius: 22px; background
 .bigdie { position: absolute; left: 50%; top: 50%; width: 78px; height: 78px; margin: -39px 0 0 -39px; background: #fff; border-radius: 18px; z-index: 3;
   box-shadow: 0 12px 30px rgba(0,0,0,.55); display: grid; grid-template: repeat(3, 1fr) / repeat(3, 1fr); padding: 12px; place-items: center; pointer-events: none; }
 .bigdie[hidden] { display: none; }
-.bigdie b { width: 13px; height: 13px; border-radius: 50%; } .bigdie b.on { background: #1b2540; }
-.bigdie.rolling { animation: tumble .7s ease-in-out; }
-@keyframes tumble { 0% { transform: translateY(-70px) rotate(0) scale(1.5); } 30% { transform: translateY(0) rotate(250deg) scale(1); } 55% { transform: translateY(-24px) rotate(430deg); } 80% { transform: translateY(0) rotate(660deg); } 100% { transform: rotate(720deg); } }
+.bigdie b { width: 13px; height: 13px; border-radius: 50%; } .bigdie b.on { background: var(--pip, #1b2540); }
 .tok.hop circle { animation: hop .18s ease-out; transform-box: fill-box; transform-origin: center; }
 @keyframes hop { 50% { transform: translateY(-.4px) scale(1.2); } }
-@media (prefers-reduced-motion: reduce) { .tok.hop circle, .bigdie.rolling { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .tok.hop circle { animation: none; } }
 #result[hidden] { display: none; }
