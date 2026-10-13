@@ -11,6 +11,10 @@
 <body>
 <main>
   <section id="lobby">
+    <div id="acct">
+      <button id="login">Log in / Sign up</button>
+      <div id="user" hidden><span id="who"></span><span id="bal"></span><small id="locked"></small><button id="logout">Log out</button></div>
+    </div>
     <h1>Ludo</h1>
     <p class="sub">Practice mode. No money involved yet.</p>
     <div class="pick" role="group" aria-label="Your colour against bots"><span>Your colour (vs bots)</span>
@@ -45,6 +49,19 @@
     </div>
   </section>
 </main>
+<dialog id="authDlg">
+  <div class="card">
+    <h2 id="authTitle">Log in</h2>
+    <label>Email<input id="em" type="email" autocomplete="email"></label>
+    <label>Password<input id="pw" type="password" autocomplete="current-password"></label>
+    <label id="unameRow" hidden>Username (optional)<input id="un" maxlength="20" autocomplete="username"></label>
+    <p id="authMsg" role="status"></p>
+    <button id="authGo">Log in</button>
+    <button id="authSwap" class="link">New here? Sign up</button>
+    <button id="authClose" class="link">Close</button>
+  </div>
+</dialog>
 <script type="module" src="app.js"></script>
+<script type="module" src="account.js"></script>
 </body>
 </html>
