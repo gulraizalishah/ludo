@@ -50,3 +50,4 @@ svg { width: 100%; height: auto; display: block; border-radius: 22px; background
 .tok.hop circle { animation: hop .18s ease-out; transform-box: fill-box; transform-origin: center; }
 @keyframes hop { 50% { transform: translateY(-.4px) scale(1.2); } }
 @media (prefers-reduced-motion: reduce) { .tok.hop circle, .bigdie.rolling { animation: none; } }
+#result[hidden] { display: none; }
