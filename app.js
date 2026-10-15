@@ -14,7 +14,11 @@ const $ = (id) => document.getElementById(id);
 const el = (t, a, p) => { const e = document.createElementNS(NS, t); for (const k in a) e.setAttribute(k, a[k]); p && p.appendChild(e); return e; };
 const svg = $('board'), tokEls = {}, baseEl = {};
 const cap = (c) => c[0].toUpperCase() + c.slice(1);
+let online = false, frozen = false, sending = false, lastEv = 0, chain = Promise.resolve();
+export const hooks = {};   // online.js plugs the network calls in here
 let cfg, me = null, viewColor = null, rotNow = 0, root;
+const mine = (c) => (online ? c === me : !bots.has(c));
+const over = () => !online && isOver(S);
 const ROT = { blue: 0, yellow: 90, green: 180, red: 270 };   // degrees to bring a colour to the bottom-left
 const UNR = { red: [-1, -1], green: [1, -1], yellow: [1, 1], blue: [-1, 1] };
 const ORDER = ['red', 'green', 'yellow', 'blue'], OPP = { red: 'yellow', yellow: 'red', green: 'blue', blue: 'green' };
@@ -74,16 +78,16 @@ function draw() {
     g.style.setProperty('--x', `${x0 + o}px`); g.style.setProperty('--y', `${y0 + o}px`);
     g.style.transform = `translate(${x0 + o}px, ${y0 + o}px)`;
     g.classList.toggle('blk', bl.has(c + i));
-    g.classList.toggle('can', c === cur && !bots.has(c) && legal.includes(i));
+    g.classList.toggle('can', c === cur && mine(c) && !frozen && legal.includes(i));
   });
-  const human = !bots.has(cur) && !isOver(S);
-  $('chips').innerHTML = S.colors.map((c) => `<span class="chip${c === cur && !isOver(S) ? ' on' : ''}" style="--c:${COL[c]}"><i></i>${cap(c)}${bots.has(c) ? ' 🤖' : ''}<small>${S.captured[c] ? '🔓' : '🔒'} ${S.tokens[c].filter((q) => q === 105).length}/4</small></span>`).join('');
-  for (const c in baseEl) baseEl[c].style.opacity = !isOver(S) && c !== cur ? .5 : 1;
-  $('result').hidden = !isOver(S);
-  if (isOver(S)) { $('rtitle').textContent = `${cap(S.winners[0])} wins!`; $('rorder').textContent = 'Finishing order: ' + S.winners.map(cap).join(' → '); }
+  const human = mine(cur) && !over() && !frozen;
+  $('chips').innerHTML = S.colors.map((c) => `<span class="chip${c === cur && !over() ? ' on' : ''}" style="--c:${COL[c]}"><i></i>${cap(c)}${online ? (c === me ? ' (you)' : '') : bots.has(c) ? ' 🤖' : ''}<small>${S.captured[c] ? '🔓' : '🔒'} ${S.tokens[c].filter((q) => q === 105).length}/4</small></span>`).join('');
+  for (const c in baseEl) baseEl[c].style.opacity = !over() && c !== cur ? .5 : 1;
+  if (!online) $('result').hidden = !over();
+  if (!online && over()) { $('rtitle').textContent = `${cap(S.winners[0])} wins!`; $('rorder').textContent = 'Finishing order: ' + S.winners.map(cap).join(' → '); }
   $('roll').disabled = !(human && S.dice == null && !busy);
   $('roll').style.setProperty('--c', COL[cur]);
-  $('status').textContent = isOver(S)
+  $('status').textContent = over()
     ? 'Game over'
     : note || (human ? (S.dice == null ? `${cap(cur)}: tap the dice` : `${cap(cur)}: tap a glowing piece`) : `${cap(cur)} is thinking…`);
   note = '';
@@ -102,7 +106,7 @@ const ovr = {}; // temporary per-token position while it hops
 
 function step() {
   draw();
-  if (isOver(S)) return;
+  if (over()) return;
   if (bots.has(S.colors[S.turn])) setTimeout(() => (S.dice == null ? doRoll() : doMove(botPick(S, S.dice))), 650);
 }
 // A 3D cube is thrown from the roller's corner and rolls (end over end) to the middle of the board
@@ -127,6 +131,7 @@ async function tumble(d, color) {
   await flight.finished; await sleep(550); big.hidden = true;
 }
 async function doRoll() {
+  if (online) { if (!busy && !frozen && S.dice == null) send(hooks.roll); return; }
   if (S.dice != null || busy) return;
   const g0 = gid; busy = true; draw();
   const d = rollDice(); await tumble(d, S.colors[S.turn]);
@@ -137,10 +142,20 @@ async function doRoll() {
   else { S = n; step(); }
 }
 // Pieces hop square by square along the exact path
+const send = (fn) => {                       // one request at a time; unlock when the server's answer arrives
+  if (sending) return;
+  sending = true; setTimeout(() => { sending = false; }, 6000);
+  fn().catch((e) => { sending = false; note = e.message; draw(); });
+};
 async function doMove(i) {
   if (busy) return;
+  if (online) { send(() => hooks.move(i)); return; }
+  await animateMove(i, applyMove(S, i, S.dice), S.dice, S.colors[S.turn]);
+  step();
+}
+async function animateMove(i, next, d, c) {
   const g0 = gid; busy = true; draw();
-  const c = S.colors[S.turn], d = S.dice, next = applyMove(S, i, d), path = movePath(S, i, d);
+  const path = movePath({ ...S, turn: S.colors.indexOf(c) }, i, d);
   const movers = S.tokens[c].map((_, j) => j).filter((j) => next.tokens[c][j] !== S.tokens[c][j]);
   for (const q of path) {
     movers.forEach((j) => { ovr[c + j] = q; });
@@ -150,21 +165,21 @@ async function doMove(i) {
     if (g0 !== gid) return;
   }
   movers.forEach((j) => delete ovr[c + j]);
-  busy = false; S = next; step();
+  busy = false; S = next;
 }
 function onToken(c, i) {
-  if (busy || c !== S.colors[S.turn] || bots.has(c) || S.dice == null || isOver(S)) return;
+  if (busy || frozen || c !== S.colors[S.turn] || !mine(c) || S.dice == null || over()) return;
   if (getLegalMoves(S, S.dice).includes(i)) doMove(i);
 }
 
 function start(colors, botColors, who = null) {
-  gid++; busy = false; $('bigdie').hidden = true; S = createGame(colors); bots = new Set(botColors);
+  gid++; busy = false; online = false; frozen = false; $('again').hidden = false; $('bigdie').hidden = true; S = createGame(colors); bots = new Set(botColors);
   setDie(0); cfg = [colors, botColors, who]; me = who;
   $('lobby').hidden = true; $('game').hidden = false;
   buildBoard(); step();
 }
 $('roll').onclick = () => doRoll();
-$('menu').onclick = () => { $('game').hidden = true; $('lobby').hidden = false; };
+$('menu').onclick = () => { $('game').hidden = true; $('lobby').hidden = false; document.dispatchEvent(new Event('lobby-shown')); };
 let mine = 'red';
 document.querySelectorAll('.pick button').forEach((b) => { b.onclick = () => { mine = b.dataset.c; document.querySelectorAll('.pick button').forEach((x) => x.setAttribute('aria-pressed', x === b)); }; });
 $('m2').onclick = () => start(ORDER.filter((c) => c === mine || c === OPP[mine]), [OPP[mine]], mine);
@@ -172,4 +187,35 @@ $('m4').onclick = () => start(ORDER, ORDER.filter((c) => c !== mine), mine);
 $('m4p').onclick = () => start(['red', 'green', 'yellow', 'blue'], []);
 
 $('again').onclick = () => start(...cfg);
-$('home').onclick = () => { $('result').hidden = true; $('game').hidden = true; $('lobby').hidden = false; };
+$('home').onclick = () => { $('result').hidden = true; $('game').hidden = true; $('lobby').hidden = false; document.dispatchEvent(new Event('lobby-shown')); };
+
+// ---------- Online matches (driven by online.js) ----------
+export function startOnline(colors, who, state) {
+  gid++; busy = false; online = true; frozen = false; sending = false; lastEv = state.ev?.n ?? 0;
+  S = state; bots = new Set(); me = who; cfg = null; note = '';
+  $('bigdie').hidden = true; $('result').hidden = true; setDie(0);
+  $('lobby').hidden = true; $('game').hidden = false;
+  buildBoard(); draw();
+}
+export function pushState(next) { chain = chain.then(() => process(next)).catch(console.error); }
+async function process(next) {                 // states are applied strictly in order, each one animated
+  sending = false;
+  const ev = next.ev;
+  if (!ev || ev.n <= lastEv) return;
+  if (ev.n !== lastEv + 1) { lastEv = ev.n; S = next; draw(); return; }   // missed some events: just jump to the latest
+  lastEv = ev.n;
+  if (ev.t === 'roll') {
+    busy = true; draw();
+    await tumble(ev.d, ev.color);
+    busy = false; setDie(ev.d);
+    if (next.dice == null) note = `${cap(ev.color)} rolled ${ev.d}: no move`;
+    S = next; draw();
+  } else {
+    await animateMove(ev.i, next, ev.d, ev.color);
+    draw();
+  }
+}
+export function freeze() { frozen = true; draw(); }
+export function showResult(title, sub) {
+  $('rtitle').textContent = title; $('rorder').textContent = sub; $('again').hidden = true; $('result').hidden = false;
+}

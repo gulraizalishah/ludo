@@ -25,6 +25,19 @@
       <button id="m4"><b>You vs 3 bots</b><span>Full four-player board</span></button>
       <button id="m4p"><b>4 players, one device</b><span>Share one screen, sit where you like</span></button>
     </div>
+    <div id="money" hidden>
+      <h3>Play for USDT</h3>
+      <div class="opts" id="stakeOpts" role="group" aria-label="Stake">
+        <button data-s="1" aria-pressed="false">1</button><button data-s="2" aria-pressed="false">2</button><button data-s="5" aria-pressed="true">5</button><button data-s="10" aria-pressed="false">10</button>
+      </div>
+      <div class="opts" id="plOpts" role="group" aria-label="Players">
+        <button data-p="2" aria-pressed="true">2 players</button><button data-p="4" aria-pressed="false">4 players</button>
+      </div>
+      <p id="prize"></p>
+      <button id="findMatch" class="go">Find match</button>
+      <button id="resumeMatch" class="go" hidden>Resume your match</button>
+      <p id="moneyMsg" role="status"></p>
+    </div>
     <details>
       <summary>House rules</summary>
       <ul>
@@ -36,7 +49,7 @@
     </details>
   </section>
   <section id="game" hidden>
-    <div class="bar"><div id="chips"></div><button id="menu">Menu</button></div>
+    <div class="bar"><div id="chips"></div><span id="timer"></span><button id="menu">Menu</button></div>
     <div id="status"></div>
     <div class="wrap">
       <svg id="board" viewBox="0 0 15 15" role="img" aria-label="Ludo board"></svg>
@@ -62,6 +75,14 @@
   </div>
 </dialog>
 <script type="module" src="app.js"></script>
+<dialog id="waitDlg">
+  <div class="card">
+    <h2 id="waitTxt">Waiting for players…</h2>
+    <p id="waitStake"></p>
+    <button id="waitCancel" class="link">Cancel and get my stake back</button>
+  </div>
+</dialog>
 <script type="module" src="account.js"></script>
+<script type="module" src="online.js"></script>
 </body>
 </html>

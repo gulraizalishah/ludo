@@ -74,3 +74,10 @@ dialog input { font: inherit; padding: 10px 12px; border-radius: 10px; border: 1
 dialog #authGo { background: #2f7de1; border-radius: 12px; padding: 11px; font-weight: 700; }
 dialog .link { background: none; color: var(--mute); text-decoration: underline; padding: 2px; }
 #authMsg { margin: 0; min-height: 1.3em; color: #ffb4a8; font-size: .9rem; }
+
+#money { background: var(--panel); border: 1px solid var(--line); border-radius: 18px; padding: 14px 16px; margin-top: 16px; display: grid; gap: 10px; }
+#money h3 { margin: 0; } #money p { margin: 0; color: var(--mute); font-size: .92rem; }
+.opts { display: flex; gap: 8px; } .opts button { flex: 1; background: #0e1627; border: 2px solid var(--line); border-radius: 12px; padding: 8px; font-weight: 700; }
+.opts button[aria-pressed="true"] { border-color: #6be28f; color: #6be28f; }
+#money .go { background: #2fa35b; border-radius: 14px; padding: 12px; font-weight: 700; font-size: 1.05rem; }
+#timer { color: var(--mute); font-weight: 700; min-width: 3.5em; text-align: right; }
