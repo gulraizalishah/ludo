@@ -83,3 +83,5 @@ dialog .link { background: none; color: var(--mute); text-decoration: underline;
 #timer { color: var(--mute); font-weight: 700; min-width: 3.5em; text-align: right; }
 
 #dbg, #dbg2 { text-align: center; color: var(--mute); font-size: .75rem; margin-top: 8px; min-height: 1em; }
+
+.spin { position: absolute; inset: 0; transform-style: preserve-3d; }

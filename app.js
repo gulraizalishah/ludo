@@ -14,6 +14,7 @@ const $ = (id) => document.getElementById(id);
 const el = (t, a, p) => { const e = document.createElementNS(NS, t); for (const k in a) e.setAttribute(k, a[k]); p && p.appendChild(e); return e; };
 const svg = $('board'), tokEls = {}, baseEl = {};
 const cap = (c) => c[0].toUpperCase() + c.slice(1);
+let local = null, pendingRoll = null;   // actions already animated on this screen while the server confirms
 let online = false, frozen = false, sending = false, lastEv = 0, chain = Promise.resolve();
 export const hooks = {};   // online.js plugs the network calls in here
 let cfg, me = null, viewColor = null, rotNow = 0, root;
@@ -110,29 +111,41 @@ function step() {
   if (over()) return;
   if (bots.has(S.colors[S.turn])) setTimeout(() => (S.dice == null ? doRoll() : doMove(botPick(S, S.dice))), 650);
 }
-// A 3D cube is thrown from the roller's corner and rolls (end over end) to the middle of the board
+// A 3D cube is thrown from the roller's corner and rolls to the middle of the board.
+// It starts at once; the number is revealed later with land(d), so online rolls feel instant.
 const FACE = { 1: 'rotateX(0deg)', 2: 'rotateY(-90deg)', 3: 'rotateX(-90deg)', 4: 'rotateX(90deg)', 5: 'rotateY(90deg)', 6: 'rotateY(180deg)' };
-async function tumble(d, color) {
+function throwDie(color) {
   const big = $('bigdie'), k = $('board').clientWidth * .3;
   const th = (ROT[viewColor] * Math.PI) / 180, [ux, uy] = UNR[color];
   const kx = Math.round(ux * Math.cos(th) - uy * Math.sin(th)), ky = Math.round(ux * Math.sin(th) + uy * Math.cos(th));
   big.style.setProperty('--pip', COL[color]);
-  big.innerHTML = '<div class="cube">' + [1, 2, 3, 4, 5, 6].map((n) => `<div class="face f${n}">${pipsHTML(n)}</div>`).join('') + '</div>';
+  big.innerHTML = '<div class="spin"><div class="cube">' + [1, 2, 3, 4, 5, 6].map((n) => `<div class="face f${n}">${pipsHTML(n)}</div>`).join('') + '</div></div>';
   big.hidden = false;
-  const at = (t, z, deg) => `perspective(700px) translate3d(${kx * k * (1 - t)}px, ${ky * k * (1 - t)}px, ${z}px) rotate3d(${ky}, ${-kx}, 0, ${deg}deg) ${FACE[d]}`;
+  const spin = big.firstChild, cube = spin.firstChild;
+  const at = (t, z, deg) => `perspective(700px) translate3d(${kx * k * (1 - t)}px, ${ky * k * (1 - t)}px, ${z}px) rotate3d(${ky}, ${-kx}, 0, ${deg}deg)`;
   const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
-  const flight = big.firstChild.animate([
+  let landed = false, idle = null;
+  const flight = spin.animate([
     { transform: at(0, 0, 0), offset: 0, easing: 'ease-out' },
-    { transform: at(.42, 110, 260), offset: .28, easing: 'ease-in' },   // thrown up
-    { transform: at(.55, 0, 360), offset: .45, easing: 'ease-out' },    // lands, rolls on
+    { transform: at(.42, 110, 260), offset: .28, easing: 'ease-in' },
+    { transform: at(.55, 0, 360), offset: .45, easing: 'ease-out' },
     { transform: at(.85, 55, 560), offset: .65, easing: 'ease-in' },
     { transform: at(.95, 0, 680), offset: .8, easing: 'ease-out' },
     { transform: at(1, 0, 720), offset: 1 },
   ], { duration: reduce ? 1 : 1000, easing: 'linear', fill: 'forwards' });
-  await flight.finished; await sleep(550); big.hidden = true;
+  // slow server? keep the die spinning in place until the number arrives
+  flight.finished.then(() => { if (!landed) idle = spin.animate([{ transform: at(1, 0, 0) }, { transform: at(1, 0, 360) }], { duration: 500, iterations: Infinity }); }).catch(() => {});
+  return {
+    async land(d) { landed = true; cube.style.transform = FACE[d]; idle?.cancel(); await flight.finished; await sleep(550); big.hidden = true; },
+    cancel() { landed = true; idle?.cancel(); flight.cancel(); big.hidden = true; },
+  };
 }
+const tumble = (d, color) => throwDie(color).land(d);
 async function doRoll() {
-  if (online) { if (!busy && !frozen && S.dice == null) send(hooks.roll); return; }
+  if (online) {
+    if (!busy && !frozen && !sending && S.dice == null) { pendingRoll = throwDie(S.colors[S.turn]); busy = true; draw(); send(hooks.roll); }
+    return;
+  }
   if (S.dice != null || busy) return;
   const g0 = gid; busy = true; draw();
   const d = rollDice(); await tumble(d, S.colors[S.turn]);
@@ -147,11 +160,22 @@ const send = (fn) => {                       // one request at a time; unlock wh
   if (sending) return;
   sending = true; setTimeout(() => { sending = false; }, 6000);
   note = 'Sending…'; draw();
-  Promise.resolve().then(fn).catch((e) => { sending = false; note = e.message; draw(); });   // also catches errors thrown before the request is sent
+  Promise.resolve().then(fn).catch((e) => {
+    sending = false; note = e.message;
+    if (pendingRoll) { pendingRoll.cancel(); pendingRoll = null; busy = false; }
+    if (online) hooks.resync?.();
+    draw();
+  });   // also catches errors thrown before the request is sent
 };
 async function doMove(i) {
   if (busy) return;
-  if (online) { send(() => hooks.move(i)); return; }
+  if (online) {
+    if (sending || frozen) return;
+    const c = S.colors[S.turn], d = S.dice, next = applyMove(S, i, d);
+    local = { n: (S.ev?.n ?? 0) + 1, done: animateMove(i, next, d, c) };
+    send(() => hooks.move(i));
+    return;
+  }
   await animateMove(i, applyMove(S, i, S.dice), S.dice, S.colors[S.turn]);
   step();
 }
@@ -208,14 +232,20 @@ async function process(next) {                 // states are applied strictly in
   lastEv = ev.n;
   if (ev.t === 'roll') {
     busy = true; draw();
-    await tumble(ev.d, ev.color);
+    const t = pendingRoll; pendingRoll = null;
+    await (t ? t.land(ev.d) : tumble(ev.d, ev.color));
     busy = false; setDie(ev.d);
     if (next.dice == null) note = `${cap(ev.color)} rolled ${ev.d}: no move`;
     S = next; draw();
   } else {
-    await animateMove(ev.i, next, ev.d, ev.color);
-    draw();
+    if (local && local.n === ev.n) { await local.done; local = null; S = next; draw(); }   // already hopped locally
+    else { await animateMove(ev.i, next, ev.d, ev.color); draw(); }
   }
+}
+export function forceState(st) {               // after an error: trust the server's version of the game
+  gid++; busy = false; sending = false; local = null;
+  if (pendingRoll) { pendingRoll.cancel(); pendingRoll = null; }
+  S = st; lastEv = st.ev?.n ?? 0; draw();
 }
 export function freeze() { frozen = true; draw(); }
 export function showResult(title, sub) {

@@ -1,7 +1,7 @@
 // Online (money) matches: lobby card, waiting room, live play through Supabase Realtime.
 // The browser never decides anything about the game: it asks the server and shows what comes back.
 import { sb } from './account.js';
-import { startOnline, pushState, showResult, freeze, hooks, debug } from './app.js';
+import { startOnline, pushState, showResult, freeze, hooks, debug, forceState } from './app.js';
 
 const $ = (id) => document.getElementById(id);
 const cap = (c) => c[0].toUpperCase() + c.slice(1);
@@ -139,6 +139,11 @@ async function act(body) {                      // roll or move: the server answ
   dbgCall = `${body.action} ${Math.round(performance.now() - t0)}ms, reply ${JSON.stringify(r ?? null).slice(0, 110)}`; showDbg();
   if (r?.state) pushState(r.state); else await poll();   // live updates and polling stay as backups (duplicates are ignored)
 }
+hooks.resync = async () => {
+  if (!cur) return;
+  const { data } = await sb.from('matches').select('*').eq('id', cur.id).maybeSingle();
+  if (data?.state) forceState(data.state);
+};
 hooks.roll = () => act({ action: 'roll' });
 hooks.move = (token) => act({ action: 'move', token });
 document.addEventListener('lobby-shown', () => { unsub(); refreshLobby(); });
