@@ -21,3 +21,4 @@ practice games vs bots, and online stake matches (USDT balance in Supabase). Pla
 
 ## Test money (SQL Editor)
 `select credit_deposit((select id from auth.users where email='YOUR_EMAIL'), 'test-001', 20);`  (use a new tx name each time)
+"# ludo" 
