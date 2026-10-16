@@ -6,7 +6,7 @@ import { startOnline, pushState, showResult, freeze, hooks } from './app.js';
 const $ = (id) => document.getElementById(id);
 const cap = (c) => c[0].toUpperCase() + c.slice(1);
 const msg = (t) => { $('moneyMsg').textContent = t; };
-let user = null, cur = null, chan = null, timer = null, q = Promise.resolve();
+let user = null, cur = null, chan = null, timer = null, pollTimer = null, q = Promise.resolve();
 let feePct = 25, stake = 5, players = 2, lastTick = 0;
 
 async function call(name, body) {
@@ -51,12 +51,23 @@ async function enter(id) {
     .on('postgres_changes', { event: '*', schema: 'public', table: 'match_players', filter: `match_id=eq.${id}` },
         () => onMatch(cur?.m))
     .subscribe(async (status) => {
+      if (!pollTimer) pollTimer = setInterval(poll, 2000);
       if (status !== 'SUBSCRIBED') return;
       const { data } = await sb.from('matches').select('*').eq('id', id).maybeSingle();   // catch up on anything missed
       if (data) onMatch(data);
     });
 }
+// Safety net: also ask the database for the latest state every 2 seconds and right after each action,
+// so the game keeps working even when live (Realtime) messages are slow or not delivered.
+async function poll() {
+  if (!cur) return;
+  const id = cur.id, { data } = await sb.from('matches').select('*').eq('id', id).maybeSingle();
+  if (!data || !cur || cur.id !== id) return;
+  if (cur.m?.status === 'waiting') { await refreshPlayers(); if (cur && cur.m?.status === 'waiting') showWaiting(); }
+  if (!cur.m || data.version > cur.m.version || data.status !== cur.m.status) onMatch(data);
+}
 function unsub() {
+  clearInterval(pollTimer); pollTimer = null;
   if (chan) sb.removeChannel(chan);
   chan = null; clearInterval(timer); timer = null; cur = null; hideWaiting();
 }
@@ -116,8 +127,8 @@ function beginTimer() {
   }, 500);
 }
 
-hooks.roll = () => call('game', { match_id: cur.id, action: 'roll' });
-hooks.move = (token) => call('game', { match_id: cur.id, action: 'move', token });
+hooks.roll = () => call('game', { match_id: cur.id, action: 'roll' }).then(poll);
+hooks.move = (token) => call('game', { match_id: cur.id, action: 'move', token }).then(poll);
 document.addEventListener('lobby-shown', () => { unsub(); refreshLobby(); });
 
 if (sb) sb.auth.onAuthStateChange((_e, s) => setTimeout(async () => {

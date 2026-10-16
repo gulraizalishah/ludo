@@ -145,6 +145,7 @@ async function doRoll() {
 const send = (fn) => {                       // one request at a time; unlock when the server's answer arrives
   if (sending) return;
   sending = true; setTimeout(() => { sending = false; }, 6000);
+  note = 'Sending…'; draw();
   fn().catch((e) => { sending = false; note = e.message; draw(); });
 };
 async function doMove(i) {
