@@ -36,7 +36,9 @@ async function refreshLobby() {                  // a match left open? offer to 
 }
 $('findMatch').onclick = async () => {
   msg('Finding a table…');
-  try { const r = await call('lobby', { action: 'join', stake, players }); msg(''); await enter(r.match_id); }
+  try { const r = await call('lobby', { action: 'join', stake, players });
+    if (!r?.match_id) throw new Error('Could not join a table, please try again.');
+    msg(''); await enter(r.match_id); }
   catch (e) { msg(nice(e.message)); }
 };
 $('resumeMatch').onclick = () => enter($('resumeMatch').dataset.id);
@@ -70,7 +72,7 @@ async function handle(m) {
   if (m.status === 'cancelled') { unsub(); msg('That table was cancelled and your stake was returned.'); return refreshLobby(); }
   if (m.status === 'waiting') { await refreshPlayers(); return cur && showWaiting(); }
   if (!m.state) return showWaiting('Table full, dealing colours…');
-  if (!cur.players.every((p) => p.color)) await refreshPlayers();
+  if (!cur.players.some((p) => p.user_id === user.id && p.color)) await refreshPlayers();   // I need to know MY colour
   if (!cur) return;
   const me = cur.players.find((p) => p.user_id === user.id)?.color;
   hideWaiting();
