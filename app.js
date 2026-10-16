@@ -221,3 +221,5 @@ export function freeze() { frozen = true; draw(); }
 export function showResult(title, sub) {
   $('rtitle').textContent = title; $('rorder').textContent = sub; $('again').hidden = true; $('result').hidden = false;
 }
+
+export function debug(t) { $('dbg2').textContent = t; }

@@ -1,7 +1,7 @@
 // Online (money) matches: lobby card, waiting room, live play through Supabase Realtime.
 // The browser never decides anything about the game: it asks the server and shows what comes back.
 import { sb } from './account.js';
-import { startOnline, pushState, showResult, freeze, hooks } from './app.js';
+import { startOnline, pushState, showResult, freeze, hooks, debug } from './app.js';
 
 const $ = (id) => document.getElementById(id);
 const cap = (c) => c[0].toUpperCase() + c.slice(1);
@@ -9,8 +9,11 @@ const msg = (t) => { $('moneyMsg').textContent = t; };
 let user = null, cur = null, chan = null, timer = null, pollTimer = null, q = Promise.resolve();
 let feePct = 25, stake = 5, players = 2, lastTick = 0;
 
+let dbgCall = '-', dbgPoll = '-';
+const showDbg = () => debug(`call: ${dbgCall} | poll: ${dbgPoll}`);
 async function call(name, body) {
-  const { data, error } = await sb.functions.invoke(name, { body });
+  const timeout = new Promise((_, no) => setTimeout(() => no(new Error('The server did not answer within 15 seconds.')), 15000));
+  const { data, error } = await Promise.race([sb.functions.invoke(name, { body }), timeout]);
   if (error) { let m = error.message; try { m = (await error.context.json()).error || m; } catch { /* keep default */ } throw new Error(m); }
   if (data?.error) throw new Error(data.error);
   return data;
@@ -61,7 +64,8 @@ async function enter(id) {
 // so the game keeps working even when live (Realtime) messages are slow or not delivered.
 async function poll() {
   if (!cur) return;
-  const id = cur.id, { data } = await sb.from('matches').select('*').eq('id', id).maybeSingle();
+  const id = cur.id, { data, error } = await sb.from('matches').select('*').eq('id', id).maybeSingle();
+  dbgPoll = error ? 'ERROR ' + error.message : data ? `v${data.version} ev${data.state?.ev?.n ?? '-'} ${data.status}` : 'no row'; showDbg();
   if (!data || !cur || cur.id !== id) return;
   if (cur.m?.status === 'waiting') { await refreshPlayers(); if (cur && cur.m?.status === 'waiting') showWaiting(); }
   if (!cur.m || data.version > cur.m.version || data.status !== cur.m.status) onMatch(data);
@@ -128,8 +132,15 @@ function beginTimer() {
 }
 
 const needMatch = () => { if (!cur) throw new Error('Match not loaded. Press Menu, then Resume your match.'); return cur.id; };
-hooks.roll = () => call('game', { match_id: needMatch(), action: 'roll' }).then(poll);
-hooks.move = (token) => call('game', { match_id: needMatch(), action: 'move', token }).then(poll);
+async function act(body) {                      // roll or move: the server answers with the new state
+  const t0 = performance.now(); let r;
+  try { r = await call('game', { match_id: needMatch(), ...body }); }
+  catch (e) { dbgCall = `${body.action} FAILED: ${e.message}`; showDbg(); throw e; }
+  dbgCall = `${body.action} ok ${Math.round(performance.now() - t0)}ms, server event ${r?.state?.ev?.n ?? '?'}`; showDbg();
+  if (r?.state) pushState(r.state); else await poll();   // live updates and polling stay as backups (duplicates are ignored)
+}
+hooks.roll = () => act({ action: 'roll' });
+hooks.move = (token) => act({ action: 'move', token });
 document.addEventListener('lobby-shown', () => { unsub(); refreshLobby(); });
 
 if (sb) sb.auth.onAuthStateChange((_e, s) => setTimeout(async () => {
