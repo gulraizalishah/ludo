@@ -136,7 +136,7 @@ async function act(body) {                      // roll or move: the server answ
   const t0 = performance.now(); let r;
   try { r = await call('game', { match_id: needMatch(), ...body }); }
   catch (e) { dbgCall = `${body.action} FAILED: ${e.message}`; showDbg(); throw e; }
-  dbgCall = `${body.action} ok ${Math.round(performance.now() - t0)}ms, server event ${r?.state?.ev?.n ?? '?'}`; showDbg();
+  dbgCall = `${body.action} ${Math.round(performance.now() - t0)}ms, reply ${JSON.stringify(r ?? null).slice(0, 110)}`; showDbg();
   if (r?.state) pushState(r.state); else await poll();   // live updates and polling stay as backups (duplicates are ignored)
 }
 hooks.roll = () => act({ action: 'roll' });
