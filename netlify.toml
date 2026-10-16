@@ -1,2 +1,4 @@
+# Plain static site: no framework, nothing to build. Files are served exactly as they are.
 [build]
   publish = "."
+  command = "echo static site, nothing to build"
