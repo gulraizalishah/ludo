@@ -90,6 +90,7 @@ function draw() {
   $('status').textContent = over()
     ? 'Game over'
     : note || (human ? (S.dice == null ? `${cap(cur)}: tap the dice` : `${cap(cur)}: tap a glowing piece`) : `${cap(cur)} is thinking…`);
+  $('dbg').textContent = online ? `turn: ${S.colors[S.turn]} | you: ${me} | dice: ${S.dice ?? '-'} | event: ${S.ev?.n ?? 0}` : '';
   note = '';
 }
 
@@ -146,7 +147,7 @@ const send = (fn) => {                       // one request at a time; unlock wh
   if (sending) return;
   sending = true; setTimeout(() => { sending = false; }, 6000);
   note = 'Sending…'; draw();
-  fn().catch((e) => { sending = false; note = e.message; draw(); });
+  Promise.resolve().then(fn).catch((e) => { sending = false; note = e.message; draw(); });   // also catches errors thrown before the request is sent
 };
 async function doMove(i) {
   if (busy) return;
@@ -198,7 +199,7 @@ export function startOnline(colors, who, state) {
   $('lobby').hidden = true; $('game').hidden = false;
   buildBoard(); draw();
 }
-export function pushState(next) { chain = chain.then(() => process(next)).catch(console.error); }
+export function pushState(next) { chain = chain.then(() => process(next)).catch((e) => { console.error(e); busy = false; note = 'Display error: ' + e.message; draw(); }); }
 async function process(next) {                 // states are applied strictly in order, each one animated
   sending = false;
   const ev = next.ev;

@@ -127,8 +127,9 @@ function beginTimer() {
   }, 500);
 }
 
-hooks.roll = () => call('game', { match_id: cur.id, action: 'roll' }).then(poll);
-hooks.move = (token) => call('game', { match_id: cur.id, action: 'move', token }).then(poll);
+const needMatch = () => { if (!cur) throw new Error('Match not loaded. Press Menu, then Resume your match.'); return cur.id; };
+hooks.roll = () => call('game', { match_id: needMatch(), action: 'roll' }).then(poll);
+hooks.move = (token) => call('game', { match_id: needMatch(), action: 'move', token }).then(poll);
 document.addEventListener('lobby-shown', () => { unsub(); refreshLobby(); });
 
 if (sb) sb.auth.onAuthStateChange((_e, s) => setTimeout(async () => {

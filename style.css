@@ -81,3 +81,5 @@ dialog .link { background: none; color: var(--mute); text-decoration: underline;
 .opts button[aria-pressed="true"] { border-color: #6be28f; color: #6be28f; }
 #money .go { background: #2fa35b; border-radius: 14px; padding: 12px; font-weight: 700; font-size: 1.05rem; }
 #timer { color: var(--mute); font-weight: 700; min-width: 3.5em; text-align: right; }
+
+#dbg { text-align: center; color: var(--mute); font-size: .75rem; margin-top: 8px; min-height: 1em; }

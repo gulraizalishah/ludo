@@ -1,0 +1,7 @@
+project_id = "ludo-game"
+
+# Both functions check the logged-in user themselves (see _shared/util.ts), so Supabase's own JWT gate is off.
+[functions.lobby]
+verify_jwt = false
+[functions.game]
+verify_jwt = false
