@@ -17,7 +17,7 @@ const cap = (c) => c[0].toUpperCase() + c.slice(1);
 let online = false, frozen = false, sending = false, lastEv = 0, chain = Promise.resolve();
 export const hooks = {};   // online.js plugs the network calls in here
 let cfg, me = null, viewColor = null, rotNow = 0, root;
-const mine = (c) => (online ? c === me : !bots.has(c));
+const isMine = (c) => (online ? c === me : !bots.has(c));
 const over = () => !online && isOver(S);
 const ROT = { blue: 0, yellow: 90, green: 180, red: 270 };   // degrees to bring a colour to the bottom-left
 const UNR = { red: [-1, -1], green: [1, -1], yellow: [1, 1], blue: [-1, 1] };
@@ -78,9 +78,9 @@ function draw() {
     g.style.setProperty('--x', `${x0 + o}px`); g.style.setProperty('--y', `${y0 + o}px`);
     g.style.transform = `translate(${x0 + o}px, ${y0 + o}px)`;
     g.classList.toggle('blk', bl.has(c + i));
-    g.classList.toggle('can', c === cur && mine(c) && !frozen && legal.includes(i));
+    g.classList.toggle('can', c === cur && isMine(c) && !frozen && legal.includes(i));
   });
-  const human = mine(cur) && !over() && !frozen;
+  const human = isMine(cur) && !over() && !frozen;
   $('chips').innerHTML = S.colors.map((c) => `<span class="chip${c === cur && !over() ? ' on' : ''}" style="--c:${COL[c]}"><i></i>${cap(c)}${online ? (c === me ? ' (you)' : '') : bots.has(c) ? ' 🤖' : ''}<small>${S.captured[c] ? '🔓' : '🔒'} ${S.tokens[c].filter((q) => q === 105).length}/4</small></span>`).join('');
   for (const c in baseEl) baseEl[c].style.opacity = !over() && c !== cur ? .5 : 1;
   if (!online) $('result').hidden = !over();
@@ -168,7 +168,7 @@ async function animateMove(i, next, d, c) {
   busy = false; S = next;
 }
 function onToken(c, i) {
-  if (busy || frozen || c !== S.colors[S.turn] || !mine(c) || S.dice == null || over()) return;
+  if (busy || frozen || c !== S.colors[S.turn] || !isMine(c) || S.dice == null || over()) return;
   if (getLegalMoves(S, S.dice).includes(i)) doMove(i);
 }
 
