@@ -114,8 +114,9 @@ function step() {
 // A 3D cube is thrown from the roller's corner and rolls to the middle of the board.
 // It starts at once; the number is revealed later with land(d), so online rolls feel instant.
 const FACE = { 1: 'rotateX(0deg)', 2: 'rotateY(-90deg)', 3: 'rotateX(-90deg)', 4: 'rotateX(90deg)', 5: 'rotateY(90deg)', 6: 'rotateY(180deg)' };
+let dieToken = 0;
 function throwDie(color) {
-  const big = $('bigdie'), k = $('board').clientWidth * .3;
+  const my = ++dieToken, big = $('bigdie'), k = $('board').clientWidth * .3;
   const th = (ROT[viewColor] * Math.PI) / 180, [ux, uy] = UNR[color];
   const kx = Math.round(ux * Math.cos(th) - uy * Math.sin(th)), ky = Math.round(ux * Math.sin(th) + uy * Math.cos(th));
   big.style.setProperty('--pip', COL[color]);
@@ -123,7 +124,7 @@ function throwDie(color) {
   big.hidden = false;
   const spin = big.firstChild, cube = spin.firstChild;
   const at = (t, z, deg) => `perspective(700px) translate3d(${kx * k * (1 - t)}px, ${ky * k * (1 - t)}px, ${z}px) rotate3d(${ky}, ${-kx}, 0, ${deg}deg)`;
-  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const DUR = matchMedia('(prefers-reduced-motion: reduce)').matches ? 1 : 1000, t0 = performance.now();
   let landed = false, idle = null;
   const flight = spin.animate([
     { transform: at(0, 0, 0), offset: 0, easing: 'ease-out' },
@@ -132,15 +133,30 @@ function throwDie(color) {
     { transform: at(.85, 55, 560), offset: .65, easing: 'ease-in' },
     { transform: at(.95, 0, 680), offset: .8, easing: 'ease-out' },
     { transform: at(1, 0, 720), offset: 1 },
-  ], { duration: reduce ? 1 : 1000, easing: 'linear', fill: 'forwards' });
-  // slow server? keep the die spinning in place until the number arrives
-  flight.finished.then(() => { if (!landed) idle = spin.animate([{ transform: at(1, 0, 0) }, { transform: at(1, 0, 360) }], { duration: 500, iterations: Infinity }); }).catch(() => {});
+  ], { duration: DUR, easing: 'linear', fill: 'forwards' });
+  // Everything below runs on plain timers, never on animation events, so the die can't get stuck on any browser.
+  const idleTimer = setTimeout(() => {      // slow server? keep spinning in place until the number arrives
+    if (!landed) idle = spin.animate([{ transform: at(1, 0, 0) }, { transform: at(1, 0, 360) }], { duration: 500, iterations: Infinity });
+  }, DUR);
+  const hide = () => {
+    clearTimeout(idleTimer); clearTimeout(guard);
+    try { idle?.cancel(); flight.cancel(); } catch { /* already gone */ }
+    if (my === dieToken) big.hidden = true;  // never hide a newer die
+  };
+  const guard = setTimeout(hide, 12000);     // no number ever arrived (server down): stop anyway
   return {
-    async land(d) { landed = true; cube.style.transform = FACE[d]; idle?.cancel(); await flight.finished; await sleep(550); big.hidden = true; },
-    cancel() { landed = true; idle?.cancel(); flight.cancel(); big.hidden = true; },
+    async land(d) {
+      landed = true; clearTimeout(guard); clearTimeout(idleTimer);
+      cube.style.transform = FACE[d]; try { idle?.cancel(); } catch { /* ignore */ }
+      await sleep(Math.max(0, DUR - (performance.now() - t0)));   // let the throw finish
+      await sleep(550);                                            // show the number for a moment
+      hide();
+    },
+    cancel: hide,
   };
 }
 const tumble = (d, color) => throwDie(color).land(d);
+setInterval(() => { if (pendingRoll && $('bigdie').hidden && busy) { pendingRoll = null; busy = false; sending = false; note = 'No answer from the server. Check your connection and try again.'; draw(); } }, 1000);
 async function doRoll() {
   if (online) {
     if (!busy && !frozen && !sending && S.dice == null) { pendingRoll = throwDie(S.colors[S.turn]); busy = true; draw(); send(hooks.roll); }
@@ -228,7 +244,7 @@ async function process(next) {                 // states are applied strictly in
   sending = false;
   const ev = next.ev;
   if (!ev || ev.n <= lastEv) return;
-  if (ev.n !== lastEv + 1) { lastEv = ev.n; S = next; draw(); return; }   // missed some events: just jump to the latest
+  if (ev.n !== lastEv + 1) { lastEv = ev.n; if (pendingRoll) { pendingRoll.cancel(); pendingRoll = null; } busy = false; S = next; draw(); return; }   // missed events: jump to the latest   // missed some events: just jump to the latest
   lastEv = ev.n;
   if (ev.t === 'roll') {
     busy = true; draw();
