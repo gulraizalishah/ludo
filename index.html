@@ -34,6 +34,7 @@
         <button data-p="2" aria-pressed="true">2 players</button><button data-p="4" aria-pressed="false">4 players</button>
       </div>
       <p id="prize"></p>
+      <button id="addFunds" class="link">Add funds (USDT)</button>
       <button id="findMatch" class="go">Find match</button>
       <button id="resumeMatch" class="go" hidden>Resume your match</button>
       <p id="moneyMsg" role="status"></p>
@@ -85,6 +86,20 @@
   </div>
 </dialog>
 <script type="module" src="account.js"></script>
+<dialog id="depDlg">
+  <div class="card">
+    <h2>Add funds</h2>
+    <p id="depNet"></p>
+    <code id="depAddr">…</code>
+    <button id="depCopy" class="link">Copy address</button>
+    <p id="depMin"></p>
+    <button id="depCheck">I have sent it: check now</button>
+    <p id="depMsg" role="status"></p>
+    <ul id="depList"></ul>
+    <button id="depClose" class="link">Close</button>
+  </div>
+</dialog>
 <script type="module" src="online.js"></script>
+<script type="module" src="deposit.js"></script>
 </body>
 </html>

@@ -91,7 +91,7 @@ function draw() {
   $('status').textContent = over()
     ? 'Game over'
     : note || (human ? (S.dice == null ? `${cap(cur)}: tap the dice` : `${cap(cur)}: tap a glowing piece`) : `${cap(cur)} is thinking…`);
-  $('dbg').textContent = online ? `turn: ${S.colors[S.turn]} | you: ${me} | dice: ${S.dice ?? '-'} | event: ${S.ev?.n ?? 0} | page ${BUILD}` : '';
+  $('dbg').textContent = DEBUG && online ? `turn: ${S.colors[S.turn]} | you: ${me} | dice: ${S.dice ?? '-'} | event: ${S.ev?.n ?? 0} | page ${BUILD}` : '';
   note = '';
 }
 
@@ -114,7 +114,8 @@ function step() {
 // A 3D cube is thrown from the roller's corner and rolls to the middle of the board.
 // It starts at once; the number is revealed later with land(d), so online rolls feel instant.
 const FACE = { 1: 'rotateX(0deg)', 2: 'rotateY(-90deg)', 3: 'rotateX(-90deg)', 4: 'rotateX(90deg)', 5: 'rotateY(90deg)', 6: 'rotateY(180deg)' };
-const BUILD = 'b8';   // shown in the gray line so we know which version of the page is running
+const DEBUG = new URLSearchParams(location.search).has('debug');   // add ?debug to the address to see technical lines
+const BUILD = 'b9';   // shown in the gray line so we know which version of the page is running
 let dieToken = 0;
 function throwDie(color) {
   const my = ++dieToken, big = $('bigdie'), k = $('board').clientWidth * .3;
@@ -245,7 +246,7 @@ async function process(next) {                 // states are applied strictly in
   sending = false;
   const ev = next.ev;
   if (!ev || ev.n <= lastEv) return;
-  if (ev.n !== lastEv + 1) { lastEv = ev.n; if (pendingRoll) { pendingRoll.cancel(); pendingRoll = null; } busy = false; S = next; draw(); return; }   // missed events: jump to the latest   // missed some events: just jump to the latest
+  if (ev.n !== lastEv + 1) { lastEv = ev.n; if (pendingRoll) { pendingRoll.cancel(); pendingRoll = null; } busy = false; S = next; draw(); return; }   // missed some events: jump to the latest
   lastEv = ev.n;
   if (ev.t === 'roll') {
     busy = true; draw();
@@ -254,9 +255,12 @@ async function process(next) {                 // states are applied strictly in
     busy = false; setDie(ev.d);
     if (next.dice == null) note = `${cap(ev.color)} rolled ${ev.d}: no move`;
     S = next; draw();
-  } else {
+  } else if (ev.t === 'move') {
     if (local && local.n === ev.n) { await local.done; local = null; S = next; draw(); }   // already hopped locally
     else { await animateMove(ev.i, next, ev.d, ev.color); draw(); }
+  } else {                                      // e.g. a player left the game
+    if (pendingRoll) { pendingRoll.cancel(); pendingRoll = null; }
+    busy = false; S = next; if (ev.forfeit) note = `${cap(ev.forfeit)} left the game.`; draw();
   }
 }
 export function forceState(st) {               // after an error: trust the server's version of the game
@@ -269,4 +273,4 @@ export function showResult(title, sub) {
   $('rtitle').textContent = title; $('rorder').textContent = sub; $('again').hidden = true; $('result').hidden = false;
 }
 
-export function debug(t) { $('dbg2').textContent = t; }
+export function debug(t) { if (DEBUG) $('dbg2').textContent = t; }

@@ -14,7 +14,7 @@ let dbgCall = '-', dbgPoll = '-';
 const showDbg = () => debug(`call: ${dbgCall} | poll: ${dbgPoll}`);
 let token = null;   // the logged-in user's access token, kept up to date from the auth events
 // Plain fetch to the Edge Function (no library internals in between): sends the request at once and gives up after 10 s.
-async function call(name, body) {
+export async function call(name, body) {
   if (!token) throw new Error('Please log in again.');
   const ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), 10000);
   try {

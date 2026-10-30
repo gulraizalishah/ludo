@@ -85,3 +85,9 @@ dialog .link { background: none; color: var(--mute); text-decoration: underline;
 #dbg, #dbg2 { text-align: center; color: var(--mute); font-size: .75rem; margin-top: 8px; min-height: 1em; }
 
 .spin { position: absolute; inset: 0; transform-style: preserve-3d; }
+
+#depAddr { display: block; word-break: break-all; background: #0e1627; border: 1px solid var(--line); border-radius: 10px; padding: 10px; font-size: .95rem; user-select: all; }
+#depNet { margin: 0; font-weight: 600; } #depNet.testnet { color: #ffd166; }
+#depMin, #depMsg { margin: 0; color: var(--mute); font-size: .9rem; } #depList { margin: 0; padding-left: 18px; color: var(--mute); font-size: .9rem; }
+#depCheck { background: #2f7de1; border-radius: 12px; padding: 11px; font-weight: 700; }
+#addFunds { justify-self: start; }
