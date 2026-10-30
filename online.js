@@ -1,6 +1,7 @@
 // Online (money) matches: lobby card, waiting room, live play through Supabase Realtime.
 // The browser never decides anything about the game: it asks the server and shows what comes back.
 import { sb } from './account.js';
+import { SUPABASE_URL, SUPABASE_ANON_KEY } from './config.js';
 import { startOnline, pushState, showResult, freeze, hooks, debug, forceState } from './app.js';
 
 const $ = (id) => document.getElementById(id);
@@ -11,12 +12,25 @@ let feePct = 25, stake = 5, players = 2, lastTick = 0;
 
 let dbgCall = '-', dbgPoll = '-';
 const showDbg = () => debug(`call: ${dbgCall} | poll: ${dbgPoll}`);
+let token = null;   // the logged-in user's access token, kept up to date from the auth events
+// Plain fetch to the Edge Function (no library internals in between): sends the request at once and gives up after 10 s.
 async function call(name, body) {
-  const timeout = new Promise((_, no) => setTimeout(() => no(new Error('The server did not answer within 15 seconds.')), 15000));
-  const { data, error } = await Promise.race([sb.functions.invoke(name, { body }), timeout]);
-  if (error) { let m = error.message; try { m = (await error.context.json()).error || m; } catch { /* keep default */ } throw new Error(m); }
-  if (data?.error) throw new Error(data.error);
-  return data;
+  if (!token) throw new Error('Please log in again.');
+  const ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), 10000);
+  try {
+    const res = await fetch(`${SUPABASE_URL}/functions/v1/${name}`, {
+      method: 'POST', signal: ctl.signal, body: JSON.stringify(body),
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}`, apikey: SUPABASE_ANON_KEY },
+    });
+    let data = null; try { data = await res.json(); } catch { /* not JSON */ }
+    if (!res.ok) throw new Error(data?.error || data?.message || `Server error ${res.status}`);
+    if (data?.error) throw new Error(data.error);
+    return data;
+  } catch (e) {
+    if (e.name === 'AbortError') throw new Error('The server did not answer within 10 seconds.');
+    if (/load failed|failed to fetch|networkerror/i.test(e.message)) throw new Error("Can't reach the server. If your Supabase project is paused, restore it in the Supabase dashboard.");
+    throw e;
+  } finally { clearTimeout(timer); }
 }
 const nice = (m) => (/violates check|wallets/i.test(m) ? 'Not enough balance. Add funds first.' : m);
 
@@ -148,7 +162,7 @@ hooks.roll = () => act({ action: 'roll' });
 hooks.move = (token) => act({ action: 'move', token });
 document.addEventListener('lobby-shown', () => { unsub(); refreshLobby(); });
 
-if (sb) sb.auth.onAuthStateChange((_e, s) => setTimeout(async () => {
+if (sb) sb.auth.onAuthStateChange((_e, s) => { token = s?.access_token ?? null; setTimeout(async () => {
   const u = s?.user ?? null;
   if ((u?.id ?? null) === (user?.id ?? null)) return;
   user = u; unsub(); $('money').hidden = !u;
@@ -156,4 +170,4 @@ if (sb) sb.auth.onAuthStateChange((_e, s) => setTimeout(async () => {
   const { data } = await sb.from('app_settings').select('value').eq('key', 'platform_fee_percent').maybeSingle();
   if (data) feePct = Number(data.value);
   preview(); refreshLobby();
-}, 0));
+}, 0); });
