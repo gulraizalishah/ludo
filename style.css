@@ -7,7 +7,7 @@ main { width: min(100%, 520px); padding: 14px 0; position: relative; }
 h1 { font-size: 3rem; margin: 0; letter-spacing: .02em; }
 .sub { color: var(--mute); margin: 0 0 18px; }
 .modes { display: grid; gap: 10px; }
-button { font: inherit; border: 0; cursor: pointer; color: var(--ink); }
+button { font: inherit; border: 0; cursor: pointer; color: var(--ink); background: var(--panel); }   /* safe default: no white buttons */
 button:focus-visible { outline: 3px solid #fff; outline-offset: 2px; }
 .modes button { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 14px 18px; text-align: left; display: grid; transition: transform .12s, background .12s; }
 .modes button:hover { background: #20315a; transform: translateY(-1px); }
@@ -90,4 +90,4 @@ dialog .link { background: none; color: var(--mute); text-decoration: underline;
 #depNet { margin: 0; font-weight: 600; } #depNet.testnet { color: #ffd166; }
 #depMin, #depMsg { margin: 0; color: var(--mute); font-size: .9rem; } #depList { margin: 0; padding-left: 18px; color: var(--mute); font-size: .9rem; }
 #depCheck { background: #2f7de1; border-radius: 12px; padding: 11px; font-weight: 700; }
-#addFunds { justify-self: start; }
+#addFunds { justify-self: start; background: #0e1627; border: 1px solid #6be28f; color: #6be28f; border-radius: 12px; padding: 8px 14px; font-weight: 700; }
