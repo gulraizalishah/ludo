@@ -148,6 +148,7 @@ function beginTimer() {
 const needMatch = () => { if (!cur) throw new Error('Match not loaded. Press Menu, then Resume your match.'); return cur.id; };
 async function act(body) {                      // roll or move: the server answers with the new state
   const t0 = performance.now(); let r;
+  dbgCall = `${body.action} sending…`; showDbg();
   try { r = await call('game', { match_id: needMatch(), ...body }); }
   catch (e) { dbgCall = `${body.action} FAILED: ${e.message}`; showDbg(); throw e; }
   dbgCall = `${body.action} ${Math.round(performance.now() - t0)}ms, reply ${JSON.stringify(r ?? null).slice(0, 110)}`; showDbg();

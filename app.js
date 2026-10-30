@@ -91,7 +91,7 @@ function draw() {
   $('status').textContent = over()
     ? 'Game over'
     : note || (human ? (S.dice == null ? `${cap(cur)}: tap the dice` : `${cap(cur)}: tap a glowing piece`) : `${cap(cur)} is thinking…`);
-  $('dbg').textContent = online ? `turn: ${S.colors[S.turn]} | you: ${me} | dice: ${S.dice ?? '-'} | event: ${S.ev?.n ?? 0}` : '';
+  $('dbg').textContent = online ? `turn: ${S.colors[S.turn]} | you: ${me} | dice: ${S.dice ?? '-'} | event: ${S.ev?.n ?? 0} | page ${BUILD}` : '';
   note = '';
 }
 
@@ -114,6 +114,7 @@ function step() {
 // A 3D cube is thrown from the roller's corner and rolls to the middle of the board.
 // It starts at once; the number is revealed later with land(d), so online rolls feel instant.
 const FACE = { 1: 'rotateX(0deg)', 2: 'rotateY(-90deg)', 3: 'rotateX(-90deg)', 4: 'rotateX(90deg)', 5: 'rotateY(90deg)', 6: 'rotateY(180deg)' };
+const BUILD = 'b8';   // shown in the gray line so we know which version of the page is running
 let dieToken = 0;
 function throwDie(color) {
   const my = ++dieToken, big = $('bigdie'), k = $('board').clientWidth * .3;
@@ -156,7 +157,7 @@ function throwDie(color) {
   };
 }
 const tumble = (d, color) => throwDie(color).land(d);
-setInterval(() => { if (pendingRoll && $('bigdie').hidden && busy) { pendingRoll = null; busy = false; sending = false; note = 'No answer from the server. Check your connection and try again.'; draw(); } }, 1000);
+setInterval(() => { if (pendingRoll && $('bigdie').hidden && busy) { pendingRoll = null; busy = false; sending = false; note = 'No answer from the server. ' + $('dbg2').textContent; draw(); } }, 1000);
 async function doRoll() {
   if (online) {
     if (!busy && !frozen && !sending && S.dice == null) { pendingRoll = throwDie(S.colors[S.turn]); busy = true; draw(); send(hooks.roll); }
@@ -176,7 +177,7 @@ const send = (fn) => {                       // one request at a time; unlock wh
   if (sending) return;
   sending = true; setTimeout(() => { sending = false; }, 6000);
   note = 'Sending…'; draw();
-  Promise.resolve().then(fn).catch((e) => {
+  Promise.resolve().then(() => { if (typeof fn !== 'function') throw new Error('Online play did not start. Reload the page and press Resume.'); return fn(); }).catch((e) => {
     sending = false; note = e.message;
     if (pendingRoll) { pendingRoll.cancel(); pendingRoll = null; busy = false; }
     if (online) hooks.resync?.();
