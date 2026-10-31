@@ -3,6 +3,7 @@
 import { admin, cors, json, userFrom } from '../_shared/util.ts';
 import { stepState, autoState } from '../_shared/play.js';
 
+const BUILD = 'game-v2';   // shown in replies so we can tell which version is deployed
 const TURN_MS = 30000;
 const rng = () => crypto.getRandomValues(new Uint32Array(1))[0] / 2 ** 32;   // unbiased, server-side only
 
@@ -15,20 +16,22 @@ Deno.serve(async (req) => {
     const db = admin();
 
     for (let attempt = 0; attempt < 3; attempt++) {
-      const { data: m } = await db.from('matches').select('*').eq('id', match_id).maybeSingle();
+      const [{ data: m }, { data: pl }] = await Promise.all([      // both lookups at the same time
+        db.from('matches').select('*').eq('id', match_id).maybeSingle(),
+        db.from('match_players').select('user_id,color').eq('match_id', match_id),
+      ]);
       if (!m || m.status !== 'active' || !m.state) return json({ error: 'This match is not active.' }, 409);
-      const { data: pl } = await db.from('match_players').select('user_id,color').eq('match_id', match_id);
       const me = (pl ?? []).find((p: { user_id: string }) => p.user_id === user.id);
       if (!me) return json({ error: 'You are not in this match.' }, 403);
 
       const s = m.state;
       if (s.winners.length >= 1) {                              // finished earlier but payout did not complete: retry it
         await settle(db, match_id, pl, s);
-        return json({ ok: true });
+        return json({ ok: true, build: BUILD, note: 'already finished' });
       }
       let next;
       if (action === 'tick') {
-        if (new Date(m.turn_deadline).getTime() > Date.now()) return json({ ok: true, waiting: true });
+        if (new Date(m.turn_deadline).getTime() > Date.now()) return json({ ok: true, build: BUILD, waiting: true });
         next = autoState(s, rng);                               // idle player: the server plays for them
       } else {
         if (s.colors[s.turn] !== me.color) return json({ error: 'Not your turn.' }, 409);
@@ -42,7 +45,7 @@ Deno.serve(async (req) => {
       if (!upd?.length) continue;                                     // someone else acted first: reload and retry
 
       if (next.winners.length >= 1) await settle(db, match_id, pl, next);
-      return json({ ok: true });
+      return json({ ok: true, build: BUILD, state: next, version: m.version + 1 });   // the actor sees the result instantly
     }
     return json({ error: 'Busy, please try again.' }, 409);
   } catch (e) {

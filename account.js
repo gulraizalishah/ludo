@@ -6,7 +6,9 @@ const $ = (id) => document.getElementById(id);
 const configured = SUPABASE_URL.startsWith('https://');
 export const sb = configured ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 const fmt = (n) => Number(n).toFixed(2);
-const msg = (t) => { $('authMsg').textContent = t; };
+const friendly = (m) => (/load failed|failed to fetch|network|fetch/i.test(m)
+  ? "Can't reach the server. If your Supabase project was idle for a while it may be paused: open the Supabase dashboard and press Restore." : m);
+const msg = (t) => { $('authMsg').textContent = friendly(t); };
 let mode = 'login', channel = null, currentId = null;
 
 function setMode(m) {
@@ -32,12 +34,13 @@ $('authGo').onclick = async () => {
     const un = $('un').value.trim();
     if (un && !/^[A-Za-z0-9_]{3,20}$/.test(un)) return msg('Username: 3-20 letters, numbers or underscore.');
     if (un) localStorage.setItem('pendingName', un);
-    const { data, error } = await sb.auth.signUp({ email, password });
+    let r; try { r = await sb.auth.signUp({ email, password }); } catch (e) { return msg(e.message); }
+    const { data, error } = r;
     if (error) return msg(error.message);
     if (!data.session) return msg('Check your email to confirm your account, then log in.');
   } else {
-    const { error } = await sb.auth.signInWithPassword({ email, password });
-    if (error) return msg(error.message);
+    let r; try { r = await sb.auth.signInWithPassword({ email, password }); } catch (e) { return msg(e.message); }
+    if (r.error) return msg(r.error.message);
   }
   $('pw').value = ''; $('authDlg').close();
 };

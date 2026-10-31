@@ -34,7 +34,7 @@
         <button data-p="2" aria-pressed="true">2 players</button><button data-p="4" aria-pressed="false">4 players</button>
       </div>
       <p id="prize"></p>
-      <button id="addFunds" class="link">Add funds (USDT)</button>
+      <div class="row"><button id="addFunds" class="link">Add funds (USDT)</button><button id="withdraw" class="link">Withdraw</button></div>
       <button id="findMatch" class="go">Find match</button>
       <button id="resumeMatch" class="go" hidden>Resume your match</button>
       <p id="moneyMsg" role="status"></p>
@@ -100,6 +100,20 @@
   </div>
 </dialog>
 <script type="module" src="online.js"></script>
+<dialog id="wdDlg">
+  <div class="card">
+    <h2>Withdraw USDT</h2>
+    <p id="wdBal"></p>
+    <label>Amount (USDT)<input id="wdAmt" inputmode="decimal" autocomplete="off"></label>
+    <label>Your TRON (TRC20) address<input id="wdTo" autocomplete="off" placeholder="T..." spellcheck="false"></label>
+    <p class="note">Payouts are sent automatically and arrive in a minute or two (very large amounts are checked by hand). Send only to a TRON address you control: a wrong address cannot be recovered.</p>
+    <button id="wdGo">Request withdrawal</button>
+    <p id="wdMsg" role="status"></p>
+    <ul id="wdList"></ul>
+    <button id="wdClose" class="link">Close</button>
+  </div>
+</dialog>
 <script type="module" src="deposit.js"></script>
+<script type="module" src="withdraw.js"></script>
 </body>
 </html>

@@ -1,8 +1,8 @@
-// supabase/functions/_shared/util.ts
+// ../../mnt/user-data/outputs/ludo/supabase/functions/_shared/util.ts
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
 var cors = {
-  "Access-Control-Allow-Origin": "*",
-  // later: restrict to your Netlify domain
+  // Set the ALLOWED_ORIGIN secret (e.g. https://your-site.netlify.app) to accept requests from your site only.
+  "Access-Control-Allow-Origin": Deno.env.get("ALLOWED_ORIGIN") ?? "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
   "Access-Control-Allow-Methods": "POST, OPTIONS"
 };
@@ -15,19 +15,21 @@ async function userFrom(req) {
   return error || !data.user ? null : data.user;
 }
 
-// supabase/functions/_shared/engine.js
+// ../../mnt/user-data/outputs/ludo/supabase/functions/_shared/engine.js
 var createGame = (colors) => ({
   colors,
   tokens: Object.fromEntries(colors.map((c) => [c, [-1, -1, -1, -1]])),
   captured: Object.fromEntries(colors.map((c) => [c, false])),
   // has this player captured yet? (unlocks the home lane)
+  out: [],
+  // players who left the game (forfeited)
   turn: 0,
   dice: null,
   sixes: 0,
   winners: []
 });
 
-// supabase/functions/lobby/index.ts
+// ../../mnt/user-data/outputs/ludo/supabase/functions/lobby/index.ts
 var ORDER = ["red", "green", "yellow", "blue"];
 var TURN_MS = 3e4;
 Deno.serve(async (req) => {

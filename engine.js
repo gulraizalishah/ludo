@@ -16,6 +16,7 @@ export const createGame = (colors) => ({
   colors,
   tokens: Object.fromEntries(colors.map((c) => [c, [-1, -1, -1, -1]])),
   captured: Object.fromEntries(colors.map((c) => [c, false])), // has this player captured yet? (unlocks the home lane)
+  out: [],                                                      // players who left the game (forfeited)
   turn: 0, dice: null, sixes: 0, winners: [],
 });
 export const rollDice = (rng = Math.random) => 1 + Math.floor(rng() * 6);
@@ -73,7 +74,8 @@ export function getLegalMoves(s, d) {
 
 function nextTurn(s) {
   let t = s.turn;
-  do { t = (t + 1) % s.colors.length; } while (s.winners.includes(s.colors[t]));
+  const gone = (c) => s.winners.includes(c) || (s.out || []).includes(c);
+  do { t = (t + 1) % s.colors.length; } while (gone(s.colors[t]));
   return { ...s, turn: t, dice: null, sixes: 0 };
 }
 
@@ -126,4 +128,14 @@ export function movePath(s, i, d) {
   const out = [];
   for (let k = 0, q = p; k < d; k++) out.push((q = advance(q, s.captured[c])));
   return out;
+}
+
+// A player who walks away: their pieces leave the board (so they can never block anyone), their turns are
+// skipped, and when only one player is left, that player wins.
+export function forfeit(s, color) {
+  const out = [...(s.out || []), color];
+  const n = { ...s, out, tokens: { ...s.tokens, [color]: [-1, -1, -1, -1] } };
+  const left = s.colors.filter((c) => !out.includes(c) && !s.winners.includes(c));
+  if (left.length === 1 && !s.winners.length) return { ...n, winners: [left[0]], dice: null };
+  return s.colors[s.turn] === color ? nextTurn(n) : n;
 }

@@ -91,3 +91,14 @@ dialog .link { background: none; color: var(--mute); text-decoration: underline;
 #depMin, #depMsg { margin: 0; color: var(--mute); font-size: .9rem; } #depList { margin: 0; padding-left: 18px; color: var(--mute); font-size: .9rem; }
 #depCheck { background: #2f7de1; border-radius: 12px; padding: 11px; font-weight: 700; }
 #addFunds { justify-self: start; background: #0e1627; border: 1px solid #6be28f; color: #6be28f; border-radius: 12px; padding: 8px 14px; font-weight: 700; }
+
+.row { display: flex; gap: 8px; flex-wrap: wrap; }
+#withdraw { background: #0e1627; border: 1px solid var(--line); border-radius: 12px; padding: 8px 14px; font-weight: 700; color: var(--ink); }
+.note { margin: 0; color: var(--mute); font-size: .85rem; }
+#wdBal, #wdMsg { margin: 0; color: var(--mute); } #wdList { margin: 0; padding-left: 18px; color: var(--mute); font-size: .9rem; }
+#wdGo { background: #2fa35b; border-radius: 12px; padding: 11px; font-weight: 700; }
+/* admin page */
+.admin h1 { font-size: 2rem; } .admin table { width: 100%; border-collapse: collapse; font-size: .9rem; } .admin td, .admin th { padding: 6px 8px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+.admin .bad { color: #ff8a80; font-weight: 700; } .admin .good { color: #6be28f; font-weight: 700; } .admin code { word-break: break-all; }
+.admin .actions { display: flex; gap: 6px; } .admin .actions button { padding: 6px 10px; border-radius: 10px; font-weight: 700; } .admin .ok { background: #2fa35b; } .admin .no { background: #8b2e2e; }
+.admin .box { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 14px; margin: 14px 0; overflow-x: auto; }

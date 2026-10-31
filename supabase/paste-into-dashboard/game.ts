@@ -1,8 +1,8 @@
-// supabase/functions/_shared/util.ts
+// ../../mnt/user-data/outputs/ludo/supabase/functions/_shared/util.ts
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
 var cors = {
-  "Access-Control-Allow-Origin": "*",
-  // later: restrict to your Netlify domain
+  // Set the ALLOWED_ORIGIN secret (e.g. https://your-site.netlify.app) to accept requests from your site only.
+  "Access-Control-Allow-Origin": Deno.env.get("ALLOWED_ORIGIN") ?? "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
   "Access-Control-Allow-Methods": "POST, OPTIONS"
 };
@@ -15,7 +15,7 @@ async function userFrom(req) {
   return error || !data.user ? null : data.user;
 }
 
-// supabase/functions/_shared/engine.js
+// ../../mnt/user-data/outputs/ludo/supabase/functions/_shared/engine.js
 var START = { red: 0, green: 13, yellow: 26, blue: 39 };
 var SAFE = [0, 8, 13, 21, 26, 34, 39, 47];
 var FINISH = 105;
@@ -65,9 +65,10 @@ function getLegalMoves(s, d) {
 }
 function nextTurn(s) {
   let t = s.turn;
+  const gone = (c) => s.winners.includes(c) || (s.out || []).includes(c);
   do {
     t = (t + 1) % s.colors.length;
-  } while (s.winners.includes(s.colors[t]));
+  } while (gone(s.colors[t]));
   return { ...s, turn: t, dice: null, sixes: 0 };
 }
 function roll(s, d) {
@@ -110,25 +111,39 @@ function botPick(s, d) {
   };
   return getLegalMoves(s, d).sort((a, b) => score(b) - score(a))[0];
 }
+function forfeit(s, color) {
+  const out = [...s.out || [], color];
+  const n = { ...s, out, tokens: { ...s.tokens, [color]: [-1, -1, -1, -1] } };
+  const left = s.colors.filter((c) => !out.includes(c) && !s.winners.includes(c));
+  if (left.length === 1 && !s.winners.length) return { ...n, winners: [left[0]], dice: null };
+  return s.colors[s.turn] === color ? nextTurn(n) : n;
+}
 
-// supabase/functions/_shared/play.js
+// ../../mnt/user-data/outputs/ludo/supabase/functions/_shared/play.js
 var nextN = (s) => (s.ev?.n ?? 0) + 1;
+var IDLE_LIMIT = 6;
 function stepState(s, action, token, rng2 = Math.random) {
-  const color = s.colors[s.turn];
+  const color = s.colors[s.turn], idle = { ...s.idle || {}, [color]: 0 };
   if (action === "roll") {
     if (s.dice != null) return null;
     const d = rollDice(rng2);
-    return { ...roll(s, d), ev: { t: "roll", d, color, n: nextN(s) } };
+    return { ...roll(s, d), idle, ev: { t: "roll", d, color, n: nextN(s) } };
   }
   if (action === "move") {
     if (s.dice == null || !getLegalMoves(s, s.dice).includes(token)) return null;
-    return { ...applyMove(s, token, s.dice), ev: { t: "move", i: token, d: s.dice, color, n: nextN(s) } };
+    return { ...applyMove(s, token, s.dice), idle, ev: { t: "move", i: token, d: s.dice, color, n: nextN(s) } };
   }
   return null;
 }
-var autoState = (s, rng2) => s.dice == null ? stepState(s, "roll", 0, rng2) : stepState(s, "move", botPick(s, s.dice), rng2);
+function autoState(s, rng2) {
+  const color = s.colors[s.turn], count = (s.idle?.[color] || 0) + 1;
+  const n = s.dice == null ? stepState(s, "roll", 0, rng2) : stepState(s, "move", botPick(s, s.dice), rng2);
+  if (count < IDLE_LIMIT) return { ...n, idle: { ...n.idle, [color]: count } };
+  return { ...forfeit(n, color), idle: { ...n.idle, [color]: count }, ev: { t: "forfeit", forfeit: color, n: nextN(s) } };
+}
 
-// supabase/functions/game/index.ts
+// ../../mnt/user-data/outputs/ludo/supabase/functions/game/index.ts
+var BUILD = "game-v2";
 var TURN_MS = 3e4;
 var rng = () => crypto.getRandomValues(new Uint32Array(1))[0] / 2 ** 32;
 Deno.serve(async (req) => {
@@ -139,19 +154,22 @@ Deno.serve(async (req) => {
     const { match_id, action, token } = await req.json();
     const db = admin();
     for (let attempt = 0; attempt < 3; attempt++) {
-      const { data: m } = await db.from("matches").select("*").eq("id", match_id).maybeSingle();
+      const [{ data: m }, { data: pl }] = await Promise.all([
+        // both lookups at the same time
+        db.from("matches").select("*").eq("id", match_id).maybeSingle(),
+        db.from("match_players").select("user_id,color").eq("match_id", match_id)
+      ]);
       if (!m || m.status !== "active" || !m.state) return json({ error: "This match is not active." }, 409);
-      const { data: pl } = await db.from("match_players").select("user_id,color").eq("match_id", match_id);
       const me = (pl ?? []).find((p) => p.user_id === user.id);
       if (!me) return json({ error: "You are not in this match." }, 403);
       const s = m.state;
       if (s.winners.length >= 1) {
         await settle(db, match_id, pl, s);
-        return json({ ok: true });
+        return json({ ok: true, build: BUILD, note: "already finished" });
       }
       let next;
       if (action === "tick") {
-        if (new Date(m.turn_deadline).getTime() > Date.now()) return json({ ok: true, waiting: true });
+        if (new Date(m.turn_deadline).getTime() > Date.now()) return json({ ok: true, build: BUILD, waiting: true });
         next = autoState(s, rng);
       } else {
         if (s.colors[s.turn] !== me.color) return json({ error: "Not your turn." }, 409);
@@ -165,7 +183,7 @@ Deno.serve(async (req) => {
       }).eq("id", match_id).eq("version", m.version).select("id");
       if (!upd?.length) continue;
       if (next.winners.length >= 1) await settle(db, match_id, pl, next);
-      return json({ ok: true });
+      return json({ ok: true, build: BUILD, state: next, version: m.version + 1 });
     }
     return json({ error: "Busy, please try again." }, 409);
   } catch (e) {

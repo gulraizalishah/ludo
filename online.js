@@ -8,7 +8,7 @@ const $ = (id) => document.getElementById(id);
 const cap = (c) => c[0].toUpperCase() + c.slice(1);
 const msg = (t) => { $('moneyMsg').textContent = t; };
 let user = null, cur = null, chan = null, timer = null, pollTimer = null, q = Promise.resolve();
-let feePct = 25, stake = 5, players = 2, lastTick = 0;
+let fees = { 2: 5, 4: 10 }, stake = 5, players = 2, lastTick = 0;
 
 let dbgCall = '-', dbgPoll = '-';
 const showDbg = () => debug(`call: ${dbgCall} | poll: ${dbgPoll}`);
@@ -36,8 +36,8 @@ const nice = (m) => (/violates check|wallets/i.test(m) ? 'Not enough balance. Ad
 
 // ---- lobby card
 function preview() {
-  const pool = stake * players, fee = (pool * feePct) / 100;
-  $('prize').textContent = `Winner gets ${(pool - fee).toFixed(2)} USDT (pool ${pool.toFixed(2)}, ${feePct}% platform fee)`;
+  const pct = fees[players] ?? 10, pool = stake * players, fee = (pool * pct) / 100;
+  $('prize').textContent = `Winner gets ${(pool - fee).toFixed(2)} USDT (pool ${pool.toFixed(2)}, ${pct}% platform fee)`;
   document.querySelectorAll('#stakeOpts button').forEach((b) => b.setAttribute('aria-pressed', Number(b.dataset.s) === stake));
   document.querySelectorAll('#plOpts button').forEach((b) => b.setAttribute('aria-pressed', Number(b.dataset.p) === players));
 }
@@ -168,7 +168,7 @@ if (sb) sb.auth.onAuthStateChange((_e, s) => { token = s?.access_token ?? null; 
   if ((u?.id ?? null) === (user?.id ?? null)) return;
   user = u; unsub(); $('money').hidden = !u;
   if (!u) return;
-  const { data } = await sb.from('app_settings').select('value').eq('key', 'platform_fee_percent').maybeSingle();
-  if (data) feePct = Number(data.value);
+  const { data } = await sb.from('app_settings').select('key,value').in('key', ['fee_percent_2p', 'fee_percent_4p']);
+  for (const r of data ?? []) fees[r.key === 'fee_percent_2p' ? 2 : 4] = Number(r.value);
   preview(); refreshLobby();
 }, 0); });
