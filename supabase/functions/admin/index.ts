@@ -1,7 +1,8 @@
 // Admin actions: look at the money, handle withdrawals that need a human, move your earnings to your balance.
 // Only accounts with profiles.is_admin = true are allowed.
 import { admin, cors, json, userFrom } from '../_shared/util.ts';
-import { tryPayout, confirmProcessing, hotStatus } from '../_shared/payout.ts';
+import { tryPayout, confirmProcessing, hotStatus, chainCfg } from '../_shared/payout.ts';
+import { txStatus } from '../_shared/tron.js';
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: cors });
@@ -41,6 +42,8 @@ Deno.serve(async (req) => {
       if (body.action === 'reject') { const { error } = await db.rpc('reject_withdrawal', { p_id: w.id }); return error ? json({ error: error.message }, 400) : json({ ok: true }); }
       const tx = String(body.tx ?? '').trim();                     // 'sent': you paid it yourself, record the transaction id
       if (!/^[0-9a-fA-F]{64}$/.test(tx)) return json({ error: 'That does not look like a transaction id (64 letters and numbers).' }, 400);
+      const seen = await txStatus(chainCfg(), tx).catch(() => 'unknown');   // a made-up id can never mark a withdrawal as paid
+      if (seen !== 'success') return json({ error: 'The network does not show this transaction as successful. Check the id (it is not the wallet address), or wait a minute after sending.' }, 400);
       const { error } = await db.rpc('mark_withdrawal_sent', { p_id: w.id, p_tx: tx });
       return error ? json({ error: error.message }, 400) : json({ ok: true });
     }

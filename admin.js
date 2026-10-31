@@ -5,7 +5,7 @@ import { SUPABASE_URL, SUPABASE_ANON_KEY } from './config.js';
 const $ = (id) => document.getElementById(id);
 const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 let token = null;
-const msg = (t) => { $('msg').textContent = t; };
+const msg = (t) => { $('msg').textContent = t; if (t) window.scrollTo(0, 0); };
 const el = (tag, text, cls) => { const e = document.createElement(tag); if (text !== undefined) e.textContent = text; if (cls) e.className = cls; return e; };
 
 async function api(body) {
@@ -24,12 +24,21 @@ $('go').onclick = async () => {
 };
 $('pw').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('go').click(); });
 $('logout').onclick = () => sb.auth.signOut();
+$('logout2').onclick = () => sb.auth.signOut();
+let verified = false;   // the panel is only ever shown after the server has confirmed this account is an admin
 sb.auth.onAuthStateChange((_e, s) => { token = s?.access_token ?? null; setTimeout(show, 0); });
 
 async function show() {
-  $('loginBox').hidden = !!token; $('panel').hidden = !token;
-  if (!token) return;
-  try { await Promise.all([overview(), lists()]); msg(''); } catch (e) { msg(e.message); $('panel').hidden = e.message === 'Admins only.'; }
+  if (!token) { verified = false; $('panel').hidden = true; $('denied').hidden = true; $('loginBox').hidden = false; msg(''); return; }
+  $('loginBox').hidden = true;
+  if (!verified) { $('panel').hidden = true; $('denied').hidden = true; msg('Checking your access…'); }
+  try {
+    await Promise.all([overview(), lists()]);
+    verified = true; $('panel').hidden = false; msg('');
+  } catch (e) {
+    if (e.message === 'Admins only.') { $('panel').hidden = true; $('denied').hidden = false; msg(''); }
+    else { msg(e.message); if (verified) window.scrollTo(0, 0); }
+  }
 }
 async function overview() {
   const { overview: o, hot: hotRaw } = await api({ action: 'overview' }), hot = hotRaw ?? {};
@@ -68,7 +77,7 @@ function pendingRow(w) {
   const retry = el('button', 'Try automatic payout again', 'ok'), ok = el('button', 'I sent it myself', 'ok'), no = el('button', 'Reject and refund', 'no');
   retry.onclick = async () => { try { const r = await api({ action: 'retry', id: w.id }); msg(r.status === 'processing' ? 'Sent to the network.' : 'Still waiting: check the payout wallet balance.'); show(); } catch (e) { msg(e.message); } };
   ok.onclick = async () => {
-    const tx = prompt(`Send ${Number(w.amount).toFixed(2)} USDT (TRC20) to:\n${w.to_address}\n\nThen paste the transaction id here:`);
+    const tx = prompt(`Send ${Number(w.amount).toFixed(2)} USDT (TRC20) to:\n${w.to_address}\n\nWhen you have really sent it, paste the TRANSACTION ID your wallet shows (a 64-character code). Not the wallet address. Leave this empty if you have not sent the money.`);
     if (!tx) return;
     try { await api({ action: 'sent', id: w.id, tx }); show(); } catch (e) { msg(e.message); }
   };

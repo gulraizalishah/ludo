@@ -209,6 +209,8 @@ Deno.serve(async (req) => {
       }
       const tx = String(body.tx ?? "").trim();
       if (!/^[0-9a-fA-F]{64}$/.test(tx)) return json({ error: "That does not look like a transaction id (64 letters and numbers)." }, 400);
+      const seen = await txStatus(chainCfg(), tx).catch(() => "unknown");
+      if (seen !== "success") return json({ error: "The network does not show this transaction as successful. Check the id (it is not the wallet address), or wait a minute after sending." }, 400);
       const { error } = await db.rpc("mark_withdrawal_sent", { p_id: w.id, p_tx: tx });
       return error ? json({ error: error.message }, 400) : json({ ok: true });
     }
