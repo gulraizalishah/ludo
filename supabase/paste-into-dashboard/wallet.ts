@@ -138,26 +138,37 @@ async function setting(db, key) {
   const { data } = await db.from("app_settings").select("value").eq("key", key).maybeSingle();
   return Number(data?.value ?? 0);
 }
+async function setNote(db, id, text) {
+  try {
+    await db.from("withdrawals").update({ note: text }).eq("id", id);
+  } catch (_e) {
+  }
+}
 async function tryPayout(db, w) {
   const { data: claimed } = await db.rpc("claim_withdrawal", { p_id: w.id });
-  if (!claimed) return "queued";
+  if (!claimed) return { status: "queued", reason: "busy" };
   let stored = false;
   try {
     const cfg = chainCfg(), h = hot(), amount = Number(w.amount);
     const bal = await balancesOf(cfg, h.address);
     if (bal.usdt < amount || bal.trx < MIN_TRX_FOR_FEES) {
       await db.rpc("release_withdrawal", { p_id: w.id });
-      return "queued";
+      await setNote(db, w.id, `Payout wallet is low: it holds ${bal.usdt.toFixed(2)} USDT and ${bal.trx.toFixed(1)} TRX, but needs ${amount} USDT and about ${MIN_TRX_FOR_FEES} TRX for fees. Top it up, then press "Try automatic payout again".`);
+      return { status: "queued", reason: "wallet" };
     }
     const { txid, signed } = await buildSignedTransfer(cfg, { fromPriv: h.priv, fromAddress: h.address, to: w.to_address, amountMicro: toMicro(w.amount) });
     await db.rpc("set_withdrawal_tx", { p_id: w.id, p_tx: txid });
     stored = true;
     await broadcast(cfg, signed);
-    return "processing";
+    await setNote(db, w.id, null);
+    return { status: "processing" };
   } catch (e) {
     console.error("payout", w.id, String(e));
-    if (!stored) await db.rpc("release_withdrawal", { p_id: w.id });
-    return stored ? "processing" : "queued";
+    if (!stored) {
+      await db.rpc("release_withdrawal", { p_id: w.id });
+      await setNote(db, w.id, "Automatic payout failed: " + String(e instanceof Error ? e.message : e).slice(0, 140));
+    }
+    return stored ? { status: "processing" } : { status: "queued", reason: "error" };
   }
 }
 async function confirmProcessing(db) {
@@ -231,9 +242,10 @@ Deno.serve(async (req) => {
       const since = new Date(Date.now() - 24 * 36e5).toISOString();
       const { data: recent } = await db.from("withdrawals").select("amount").eq("user_id", user.id).neq("status", "rejected").gte("created_at", since);
       const day = (recent ?? []).reduce((s, r) => s + Number(r.amount), 0);
-      let status = "queued";
-      if (amount <= max && day <= dailyMax && env2("HD_SEED")) status = await tryPayout(db, { id: data, amount: amount.toFixed(6), to_address: to });
-      return json({ ok: true, id: data, status });
+      let result = { status: "queued", reason: "limit" };
+      if (amount <= max && day <= dailyMax && env2("HD_SEED")) result = await tryPayout(db, { id: data, amount: amount.toFixed(6), to_address: to });
+      else await setNote(db, data, !env2("HD_SEED") ? "Automatic payouts are not set up (the HD_SEED secret is missing)." : amount > max ? `Over the automatic limit of ${max} USDT per withdrawal.` : `This player passed the automatic limit of ${dailyMax} USDT in 24 hours.`);
+      return json({ ok: true, id: data, status: result.status, reason: result.reason });
     }
     if (action === "check") await confirmProcessing(db);
     const address = await addressFor(db, user.id);

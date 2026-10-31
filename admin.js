@@ -33,7 +33,7 @@ async function show() {
   $('loginBox').hidden = true;
   if (!verified) { $('panel').hidden = true; $('denied').hidden = true; msg('Checking your access…'); }
   try {
-    await Promise.all([overview(), lists()]);
+    await Promise.all([overview(), lists(), history()]);
     verified = true; $('panel').hidden = false; msg('');
   } catch (e) {
     if (e.message === 'Admins only.') { $('panel').hidden = true; $('denied').hidden = false; msg(''); }
@@ -41,7 +41,8 @@ async function show() {
   }
 }
 async function overview() {
-  const { overview: o, hot: hotRaw } = await api({ action: 'overview' }), hot = hotRaw ?? {};
+  const { overview: o, hot: hotRaw, network: net } = await api({ action: 'overview' }), hot = hotRaw ?? {};
+  network = net || network;
   const f = (n) => Number(n).toFixed(2), rows = [
     ['Total deposited', f(o.deposits_total)], ['Players: available', f(o.players_available)], ['Players: locked in matches', f(o.players_locked)],
     ['Platform fees earned', f(o.platform_fees)], ['Withdrawals waiting', `${o.pending_count} (${f(o.pending_amount)})`],
@@ -57,7 +58,9 @@ async function overview() {
   $('earn').textContent = `Available: ${f(o.platform_fees)} USDT`;
   earnings = Number(o.platform_fees);
 }
-let earnings = 0;
+let earnings = 0, network = 'nile';
+const explorer = (tx) => `https://${network === 'mainnet' ? '' : network + '.'}tronscan.org/#/transaction/${tx}`;
+const KIND = { deposit: 'Deposit', stake_lock: 'Stake locked', stake_refund: 'Stake refunded', match_win: 'Match won', match_loss: 'Match lost', platform_fee: 'Platform fee', withdrawal_request: 'Withdrawal', withdrawal_refund: 'Withdrawal refunded', platform_payout: 'Earnings moved' };
 $('takeBtn').onclick = async () => {
   const a = prompt(`How much to move to your balance? (up to ${earnings.toFixed(2)})`, earnings.toFixed(2));
   if (!a) return;
@@ -72,6 +75,7 @@ function pendingRow(w) {
   const box = el('div'); box.style.cssText = 'padding:10px 0;border-bottom:1px solid var(--line)';
   const head = el('div', `${Number(w.amount).toFixed(2)} USDT · ${w.username || w.email} · ${new Date(w.created_at).toLocaleString()}`); head.style.fontWeight = '700';
   const to = el('code', w.to_address);
+  const why = w.note ? el('div', w.note, 'bad') : null;
   const actions = el('div', undefined, 'actions'); actions.style.marginTop = '8px';
   if (w.status === 'processing') { actions.append(el('span', `Being sent automatically${w.tx_hash ? ' · ' + w.tx_hash.slice(0, 12) + '…' : ''}`)); box.append(head, to, actions); return box; }
   const retry = el('button', 'Try automatic payout again', 'ok'), ok = el('button', 'I sent it myself', 'ok'), no = el('button', 'Reject and refund', 'no');
@@ -82,5 +86,23 @@ function pendingRow(w) {
     try { await api({ action: 'sent', id: w.id, tx }); show(); } catch (e) { msg(e.message); }
   };
   no.onclick = async () => { if (!confirm('Reject this withdrawal and return the money to the player?')) return; try { await api({ action: 'reject', id: w.id }); show(); } catch (e) { msg(e.message); } };
-  actions.append(retry, ok, no); box.append(head, to, actions); return box;
+  actions.append(retry, ok, no); box.append(head, to, ...(why ? [why] : []), actions); return box;
 }
+
+async function history() {
+  const { rows } = await api({ action: 'transactions', filter: $('filter').value });
+  const f = (n) => (Number(n) > 0 ? '+' : '') + Number(n).toFixed(2);
+  const head = el('tr'); ['Time', 'Who', 'What', 'Available', 'Locked', 'Details'].forEach((t) => head.append(el('th', t)));
+  const body = rows.map((r) => {
+    const tr = el('tr'), det = el('td');
+    if (r.withdrawal) {
+      det.append(document.createTextNode(`${r.withdrawal.status} · ${r.withdrawal.to_address} `));
+      if (r.withdrawal.tx_hash) { const l = el('a', 'view transaction'); l.href = explorer(r.withdrawal.tx_hash); l.target = '_blank'; l.rel = 'noopener'; l.style.color = '#6be28f'; det.append(l); }
+      if (r.withdrawal.note) det.append(el('div', r.withdrawal.note, 'bad'));
+    }
+    tr.append(el('td', new Date(r.created_at).toLocaleString()), el('td', r.who), el('td', KIND[r.kind] || r.kind), el('td', f(r.d_available)), el('td', f(r.d_locked)), det);
+    return tr;
+  });
+  $('tx').replaceChildren(head, ...(body.length ? body : [(() => { const tr = el('tr'); tr.append(el('td', 'Nothing yet.')); return tr; })()]));
+}
+$('filter').onchange = () => history().catch((e) => msg(e.message));

@@ -19,11 +19,12 @@ Deno.serve(async (req) => {
       const { data, error } = await db.from('admin_overview').select('*').single();
       if (error) return json({ error: error.message }, 500);
       let hot = null; try { hot = await hotStatus(); } catch (e) { hot = { error: String(e instanceof Error ? e.message : e) }; }
-      return json({ overview: data, hot });
+      const api = chainCfg().api, network = api.includes('nile') ? 'nile' : api.includes('shasta') ? 'shasta' : 'mainnet';
+      return json({ overview: data, hot, network });
     }
     if (body.action === 'pending' || body.action === 'recent') {
       const pending = body.action === 'pending';
-      let q = db.from('withdrawals').select('id,user_id,amount,to_address,status,tx_hash,created_at,processed_at');
+      let q = db.from('withdrawals').select('id,user_id,amount,to_address,status,tx_hash,note,created_at,processed_at');
       q = pending ? q.in('status', ['pending', 'processing']).order('created_at', { ascending: true }) : q.in('status', ['sent', 'rejected']).order('processed_at', { ascending: false });
       const { data } = await q.limit(pending ? 50 : 15);
       const rows = [];
@@ -34,11 +35,31 @@ Deno.serve(async (req) => {
       }
       return json({ rows });
     }
+    if (body.action === 'transactions') {                          // everything that moved money, newest first
+      const groups: Record<string, string[]> = {
+        deposits: ['deposit'], withdrawals: ['withdrawal_request', 'withdrawal_refund'],
+        matches: ['stake_lock', 'stake_refund', 'match_win', 'match_loss', 'platform_fee'], earnings: ['platform_payout'],
+      };
+      let q = db.from('ledger').select('id,user_id,kind,d_available,d_locked,created_at,ref').order('created_at', { ascending: false });
+      if (groups[body.filter]) q = q.in('kind', groups[body.filter]);
+      const { data } = await q.limit(100);
+      const names: Record<string, string> = {};
+      for (const r of data ?? []) {
+        if (!r.user_id || names[r.user_id]) continue;
+        const { data: u } = await db.auth.admin.getUserById(r.user_id);
+        const { data: p } = await db.from('profiles').select('username').eq('id', r.user_id).maybeSingle();
+        names[r.user_id] = p?.username || u?.user?.email || '?';
+      }
+      const ids = (data ?? []).filter((r: { kind: string; ref: string | null }) => r.kind === 'withdrawal_request' && r.ref).map((r: { ref: string }) => r.ref);
+      const wd: Record<string, unknown> = {};
+      if (ids.length) { const { data: ws } = await db.from('withdrawals').select('id,status,to_address,tx_hash,note').in('id', ids); for (const x of ws ?? []) wd[x.id] = x; }
+      return json({ rows: (data ?? []).map((r: { user_id: string | null; ref: string | null }) => ({ ...r, who: r.user_id ? names[r.user_id] : 'Platform', withdrawal: r.ref ? wd[r.ref] ?? null : null })) });
+    }
     if (['sent', 'reject', 'retry'].includes(body.action)) {
       const { data: w } = await db.from('withdrawals').select('id,amount,to_address,status').eq('id', body.id).maybeSingle();
       if (!w) return json({ error: 'Withdrawal not found.' }, 404);
       if (w.status !== 'pending') return json({ error: w.status === 'processing' ? 'This one is already being sent automatically. Wait for the network to confirm it.' : 'This withdrawal is already finished.' }, 400);
-      if (body.action === 'retry') return json({ ok: true, status: await tryPayout(db, w) });
+      if (body.action === 'retry') return json({ ok: true, ...(await tryPayout(db, w)) });
       if (body.action === 'reject') { const { error } = await db.rpc('reject_withdrawal', { p_id: w.id }); return error ? json({ error: error.message }, 400) : json({ ok: true }); }
       const tx = String(body.tx ?? '').trim();                     // 'sent': you paid it yourself, record the transaction id
       if (!/^[0-9a-fA-F]{64}$/.test(tx)) return json({ error: 'That does not look like a transaction id (64 letters and numbers).' }, 400);

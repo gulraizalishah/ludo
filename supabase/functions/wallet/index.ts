@@ -3,7 +3,8 @@
 // TRON_API and USDT_CONTRACT (optional: default to the Nile TEST network and its test USDT).
 import { admin, cors, json, userFrom } from '../_shared/util.ts';
 import { deriveAddress, parseDeposits, isValidTronAddress } from '../_shared/tron.js';
-import { setting, tryPayout, confirmProcessing } from '../_shared/payout.ts';
+import { setting, tryPayout, confirmProcessing, setNote } from '../_shared/payout.ts';
+import type { PayoutResult } from '../_shared/payout.ts';
 
 const env = (k: string, d = '') => Deno.env.get(k) || d;
 const API = () => env('TRON_API', 'https://nile.trongrid.io');
@@ -47,9 +48,10 @@ Deno.serve(async (req) => {
       const since = new Date(Date.now() - 24 * 3600_000).toISOString();
       const { data: recent } = await db.from('withdrawals').select('amount').eq('user_id', user.id).neq('status', 'rejected').gte('created_at', since);
       const day = (recent ?? []).reduce((s: number, r: { amount: string }) => s + Number(r.amount), 0);   // includes this one
-      let status = 'queued';
-      if (amount <= max && day <= dailyMax && env('HD_SEED')) status = await tryPayout(db, { id: data, amount: amount.toFixed(6), to_address: to });
-      return json({ ok: true, id: data, status });
+      let result: PayoutResult & { reason?: string } = { status: 'queued', reason: 'limit' };
+      if (amount <= max && day <= dailyMax && env('HD_SEED')) result = await tryPayout(db, { id: data, amount: amount.toFixed(6), to_address: to });
+      else await setNote(db, data, !env('HD_SEED') ? 'Automatic payouts are not set up (the HD_SEED secret is missing).' : amount > max ? `Over the automatic limit of ${max} USDT per withdrawal.` : `This player passed the automatic limit of ${dailyMax} USDT in 24 hours.`);
+      return json({ ok: true, id: data, status: result.status, reason: result.reason });
     }
     if (action === 'check') await confirmProcessing(db);          // settle payouts first, whatever else happens
     const address = await addressFor(db, user.id);

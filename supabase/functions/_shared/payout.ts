@@ -16,24 +16,33 @@ export async function setting(db: DB, key: string): Promise<number> {
   return Number(data?.value ?? 0);
 }
 
-// Try to pay one pending withdrawal automatically. Returns 'processing' (sent to the network), 'queued' (left for you).
-export async function tryPayout(db: DB, w: { id: string; amount: string; to_address: string }): Promise<'processing' | 'queued'> {
+export type PayoutResult = { status: 'processing' | 'queued'; reason?: 'busy' | 'wallet' | 'error' };
+// Remember WHY a withdrawal is waiting (the admin page shows it). Best effort: never breaks a payout.
+export async function setNote(db: DB, id: string, text: string | null) { try { await db.from('withdrawals').update({ note: text }).eq('id', id); } catch (_e) { /* ignore */ } }
+
+// Try to pay one pending withdrawal automatically. 'processing' = sent to the network, 'queued' = left waiting (with a reason).
+export async function tryPayout(db: DB, w: { id: string; amount: string; to_address: string }): Promise<PayoutResult> {
   const { data: claimed } = await db.rpc('claim_withdrawal', { p_id: w.id });   // only one caller can win
-  if (!claimed) return 'queued';
+  if (!claimed) return { status: 'queued', reason: 'busy' };
   let stored = false;
   try {
     const cfg = chainCfg(), h = hot(), amount = Number(w.amount);
     const bal = await balancesOf(cfg, h.address);
-    if (bal.usdt < amount || bal.trx < MIN_TRX_FOR_FEES) { await db.rpc('release_withdrawal', { p_id: w.id }); return 'queued'; }
+    if (bal.usdt < amount || bal.trx < MIN_TRX_FOR_FEES) {
+      await db.rpc('release_withdrawal', { p_id: w.id });
+      await setNote(db, w.id, `Payout wallet is low: it holds ${bal.usdt.toFixed(2)} USDT and ${bal.trx.toFixed(1)} TRX, but needs ${amount} USDT and about ${MIN_TRX_FOR_FEES} TRX for fees. Top it up, then press "Try automatic payout again".`);
+      return { status: 'queued', reason: 'wallet' };
+    }
     const { txid, signed } = await buildSignedTransfer(cfg, { fromPriv: h.priv, fromAddress: h.address, to: w.to_address, amountMicro: toMicro(w.amount) });
     await db.rpc('set_withdrawal_tx', { p_id: w.id, p_tx: txid });                // saved BEFORE broadcasting
     stored = true;
     await broadcast(cfg, signed);                                                  // if this reply is lost, confirmProcessing finds the transaction by its id
-    return 'processing';
+    await setNote(db, w.id, null);
+    return { status: 'processing' };
   } catch (e) {
     console.error('payout', w.id, String(e));
-    if (!stored) await db.rpc('release_withdrawal', { p_id: w.id });              // nothing was sent: back to the queue
-    return stored ? 'processing' : 'queued';
+    if (!stored) { await db.rpc('release_withdrawal', { p_id: w.id }); await setNote(db, w.id, 'Automatic payout failed: ' + String(e instanceof Error ? e.message : e).slice(0, 140)); }   // nothing was sent: back to the queue
+    return stored ? { status: 'processing' } : { status: 'queued', reason: 'error' };
   }
 }
 

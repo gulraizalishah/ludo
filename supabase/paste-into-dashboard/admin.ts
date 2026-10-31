@@ -104,26 +104,37 @@ var chainCfg = () => ({
 });
 var hot = () => hotWallet(env("HD_SEED"));
 var MIN_TRX_FOR_FEES = 30;
+async function setNote(db, id, text) {
+  try {
+    await db.from("withdrawals").update({ note: text }).eq("id", id);
+  } catch (_e) {
+  }
+}
 async function tryPayout(db, w) {
   const { data: claimed } = await db.rpc("claim_withdrawal", { p_id: w.id });
-  if (!claimed) return "queued";
+  if (!claimed) return { status: "queued", reason: "busy" };
   let stored = false;
   try {
     const cfg = chainCfg(), h = hot(), amount = Number(w.amount);
     const bal = await balancesOf(cfg, h.address);
     if (bal.usdt < amount || bal.trx < MIN_TRX_FOR_FEES) {
       await db.rpc("release_withdrawal", { p_id: w.id });
-      return "queued";
+      await setNote(db, w.id, `Payout wallet is low: it holds ${bal.usdt.toFixed(2)} USDT and ${bal.trx.toFixed(1)} TRX, but needs ${amount} USDT and about ${MIN_TRX_FOR_FEES} TRX for fees. Top it up, then press "Try automatic payout again".`);
+      return { status: "queued", reason: "wallet" };
     }
     const { txid, signed } = await buildSignedTransfer(cfg, { fromPriv: h.priv, fromAddress: h.address, to: w.to_address, amountMicro: toMicro(w.amount) });
     await db.rpc("set_withdrawal_tx", { p_id: w.id, p_tx: txid });
     stored = true;
     await broadcast(cfg, signed);
-    return "processing";
+    await setNote(db, w.id, null);
+    return { status: "processing" };
   } catch (e) {
     console.error("payout", w.id, String(e));
-    if (!stored) await db.rpc("release_withdrawal", { p_id: w.id });
-    return stored ? "processing" : "queued";
+    if (!stored) {
+      await db.rpc("release_withdrawal", { p_id: w.id });
+      await setNote(db, w.id, "Automatic payout failed: " + String(e instanceof Error ? e.message : e).slice(0, 140));
+    }
+    return stored ? { status: "processing" } : { status: "queued", reason: "error" };
   }
 }
 async function confirmProcessing(db) {
@@ -183,11 +194,12 @@ Deno.serve(async (req) => {
       } catch (e) {
         hot2 = { error: String(e instanceof Error ? e.message : e) };
       }
-      return json({ overview: data, hot: hot2 });
+      const api = chainCfg().api, network = api.includes("nile") ? "nile" : api.includes("shasta") ? "shasta" : "mainnet";
+      return json({ overview: data, hot: hot2, network });
     }
     if (body.action === "pending" || body.action === "recent") {
       const pending = body.action === "pending";
-      let q = db.from("withdrawals").select("id,user_id,amount,to_address,status,tx_hash,created_at,processed_at");
+      let q = db.from("withdrawals").select("id,user_id,amount,to_address,status,tx_hash,note,created_at,processed_at");
       q = pending ? q.in("status", ["pending", "processing"]).order("created_at", { ascending: true }) : q.in("status", ["sent", "rejected"]).order("processed_at", { ascending: false });
       const { data } = await q.limit(pending ? 50 : 15);
       const rows = [];
@@ -198,11 +210,36 @@ Deno.serve(async (req) => {
       }
       return json({ rows });
     }
+    if (body.action === "transactions") {
+      const groups = {
+        deposits: ["deposit"],
+        withdrawals: ["withdrawal_request", "withdrawal_refund"],
+        matches: ["stake_lock", "stake_refund", "match_win", "match_loss", "platform_fee"],
+        earnings: ["platform_payout"]
+      };
+      let q = db.from("ledger").select("id,user_id,kind,d_available,d_locked,created_at,ref").order("created_at", { ascending: false });
+      if (groups[body.filter]) q = q.in("kind", groups[body.filter]);
+      const { data } = await q.limit(100);
+      const names = {};
+      for (const r of data ?? []) {
+        if (!r.user_id || names[r.user_id]) continue;
+        const { data: u } = await db.auth.admin.getUserById(r.user_id);
+        const { data: p } = await db.from("profiles").select("username").eq("id", r.user_id).maybeSingle();
+        names[r.user_id] = p?.username || u?.user?.email || "?";
+      }
+      const ids = (data ?? []).filter((r) => r.kind === "withdrawal_request" && r.ref).map((r) => r.ref);
+      const wd = {};
+      if (ids.length) {
+        const { data: ws } = await db.from("withdrawals").select("id,status,to_address,tx_hash,note").in("id", ids);
+        for (const x of ws ?? []) wd[x.id] = x;
+      }
+      return json({ rows: (data ?? []).map((r) => ({ ...r, who: r.user_id ? names[r.user_id] : "Platform", withdrawal: r.ref ? wd[r.ref] ?? null : null })) });
+    }
     if (["sent", "reject", "retry"].includes(body.action)) {
       const { data: w } = await db.from("withdrawals").select("id,amount,to_address,status").eq("id", body.id).maybeSingle();
       if (!w) return json({ error: "Withdrawal not found." }, 404);
       if (w.status !== "pending") return json({ error: w.status === "processing" ? "This one is already being sent automatically. Wait for the network to confirm it." : "This withdrawal is already finished." }, 400);
-      if (body.action === "retry") return json({ ok: true, status: await tryPayout(db, w) });
+      if (body.action === "retry") return json({ ok: true, ...await tryPayout(db, w) });
       if (body.action === "reject") {
         const { error: error2 } = await db.rpc("reject_withdrawal", { p_id: w.id });
         return error2 ? json({ error: error2.message }, 400) : json({ ok: true });

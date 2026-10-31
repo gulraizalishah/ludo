@@ -37,7 +37,7 @@ Add `?debug` to the site address to see the technical status lines.
 ## Money rules (edit in the `app_settings` table, no code change)
 - `fee_percent_2p` = 5 and `fee_percent_4p` = 10: your share of the total pool by table size.
 - `min_withdrawal` = 10, `auto_withdraw_max` = 100 (per request), `auto_withdraw_daily_max` = 500 (per player per 24 h).
-  Withdrawals within these limits are sent automatically; bigger ones wait on the admin page.
+  Withdrawals within these limits are sent automatically; bigger ones wait on the admin page. Every waiting withdrawal shows its reason there (the `note` column).
 
 ## Payout wallet
 Withdrawals are paid from address number 0 of the `HD_SEED` wallet (players' deposit addresses start at 1). The admin page shows its address
@@ -47,3 +47,6 @@ payouts are confirmed on the chain; failed or expired ones are refunded automati
 ## Becoming admin and taking your earnings
 Sign up normally, then run `supabase/maintenance/make_admin.sql` (with your email) in the SQL Editor. Open `/admin.html` and log in.
 "Move earnings to my balance" turns platform fees into your own player balance; then press Withdraw in the game to send it to your wallet.
+
+The admin page also has a **Transaction history** (deposits, withdrawals, match results, fees, earnings) with links to the block explorer.
+Run all files in `supabase/migrations/` in order (currently 7).

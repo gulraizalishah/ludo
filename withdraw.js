@@ -4,7 +4,7 @@ import { call } from './online.js';
 
 const $ = (id) => document.getElementById(id);
 const say = (t) => { $('wdMsg').textContent = t; };
-const STATUS = { pending: 'waiting for approval', processing: 'being sent', sent: 'sent', rejected: 'cancelled, money returned' };
+const STATUS = { pending: 'saved, being prepared', processing: 'being sent', sent: 'sent', rejected: 'cancelled, money returned' };
 let minWd = 10;
 
 $('withdraw').onclick = async () => {
@@ -24,7 +24,9 @@ $('wdGo').onclick = async () => {
   $('wdGo').disabled = true; say('Sending your request…');
   try {
     const r = await call('wallet', { action: 'withdraw', amount, to });
-    say(r.status === 'processing' ? 'Sent to the network. It arrives in a minute or two.' : 'Request received. It is waiting for approval (large amounts are checked by hand).'); $('wdAmt').value = ''; history(); }
+    say(r.status === 'processing' ? 'Sent to the network. It arrives in a minute or two.'
+      : r.reason === 'limit' ? 'Your request is saved. Amounts this large are checked by hand before they are sent.'
+      : 'Your request is saved and will be paid very soon. It shows in your list below.'); $('wdAmt').value = ''; history(); }
   catch (e) { say(e.message); }
   $('wdGo').disabled = false;
 };

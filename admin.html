@@ -26,6 +26,10 @@
       <p style="color:var(--mute);font-size:.85rem">Then open the game with this same account and press Withdraw to send it to your wallet.</p></div>
     <div class="box"><h3 style="margin-top:0">Withdrawals waiting</h3><div id="pending"></div></div>
     <div class="box"><h3 style="margin-top:0">Recently processed</h3><div id="recent"></div></div>
+    <div class="box"><h3 style="margin-top:0">Transaction history</h3>
+      <select id="filter" style="font:inherit;padding:8px;border-radius:10px;border:1px solid var(--line);background:#0e1627;color:var(--ink);margin-bottom:8px">
+        <option value="">Everything</option><option value="deposits">Deposits</option><option value="withdrawals">Withdrawals</option><option value="matches">Matches and fees</option><option value="earnings">My earnings</option></select>
+      <div style="overflow-x:auto"><table id="tx"></table></div></div>
     <button id="logout" style="background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:8px 14px">Log out</button>
   </div>
 </main>
