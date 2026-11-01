@@ -1,6 +1,6 @@
 // Automatic USDT payouts: send, then confirm on the chain. Shared by the wallet and admin functions.
 import { admin } from './util.ts';
-import { hotWallet, buildSignedTransfer, broadcast, txStatus, balancesOf, toMicro } from './tron.js';
+import { hotWallet, buildSignedTransfer, buildSignedTrxTransfer, broadcast, txStatus, balancesOf, toMicro } from './tron.js';
 
 type DB = ReturnType<typeof admin>;
 const env = (k: string, d = '') => Deno.env.get(k) || d;
@@ -15,6 +15,11 @@ export async function setting(db: DB, key: string): Promise<number> {
   const { data } = await db.from('app_settings').select('value').eq('key', key).maybeSingle();
   return Number(data?.value ?? 0);
 }
+// The game currency: 'TRX' or 'USDT' (setting `asset`). TRX needs no fee top-ups; USDT does.
+export async function assetOf(db: DB): Promise<'TRX' | 'USDT'> {
+  const { data } = await db.from('app_settings').select('value').eq('key', 'asset').maybeSingle();
+  return data?.value === 'TRX' ? 'TRX' : 'USDT';
+}
 
 export type PayoutResult = { status: 'processing' | 'queued'; reason?: 'busy' | 'wallet' | 'error' };
 // Remember WHY a withdrawal is waiting (the admin page shows it). Best effort: never breaks a payout.
@@ -26,14 +31,19 @@ export async function tryPayout(db: DB, w: { id: string; amount: string; to_addr
   if (!claimed) return { status: 'queued', reason: 'busy' };
   let stored = false;
   try {
-    const cfg = chainCfg(), h = hot(), amount = Number(w.amount);
+    const cfg = chainCfg(), h = hot(), amount = Number(w.amount), asset = await assetOf(db);
     const bal = await balancesOf(cfg, h.address);
-    if (bal.usdt < amount || bal.trx < MIN_TRX_FOR_FEES) {
+    const short = asset === 'TRX' ? bal.trx < amount + 1 : bal.usdt < amount || bal.trx < MIN_TRX_FOR_FEES;
+    if (short) {
       await db.rpc('release_withdrawal', { p_id: w.id });
-      await setNote(db, w.id, `Payout wallet is low: it holds ${bal.usdt.toFixed(2)} USDT and ${bal.trx.toFixed(1)} TRX, but needs ${amount} USDT and about ${MIN_TRX_FOR_FEES} TRX for fees. Top it up, then press "Try automatic payout again".`);
+      await setNote(db, w.id, asset === 'TRX'
+        ? `Payout wallet is low: it holds ${bal.trx.toFixed(2)} TRX but needs ${amount} TRX plus about 1 TRX for the fee. Top it up, then press "Try automatic payout again".`
+        : `Payout wallet is low: it holds ${bal.usdt.toFixed(2)} USDT and ${bal.trx.toFixed(1)} TRX, but needs ${amount} USDT and about ${MIN_TRX_FOR_FEES} TRX for fees. Top it up, then press "Try automatic payout again".`);
       return { status: 'queued', reason: 'wallet' };
     }
-    const { txid, signed } = await buildSignedTransfer(cfg, { fromPriv: h.priv, fromAddress: h.address, to: w.to_address, amountMicro: toMicro(w.amount) });
+    const { txid, signed } = asset === 'TRX'
+      ? await buildSignedTrxTransfer(cfg, { fromPriv: h.priv, fromAddress: h.address, to: w.to_address, amountSun: toMicro(w.amount) })
+      : await buildSignedTransfer(cfg, { fromPriv: h.priv, fromAddress: h.address, to: w.to_address, amountMicro: toMicro(w.amount) });
     await db.rpc('set_withdrawal_tx', { p_id: w.id, p_tx: txid });                // saved BEFORE broadcasting
     stored = true;
     await broadcast(cfg, signed);                                                  // if this reply is lost, confirmProcessing finds the transaction by its id
@@ -54,7 +64,7 @@ export async function confirmProcessing(db: DB) {
     const age = Date.now() - new Date(w.processing_at).getTime();
     try {
       if (!w.tx_hash) { if (age > 5 * 60_000) await db.rpc('release_withdrawal', { p_id: w.id }); continue; }   // nothing was ever broadcast
-      const s = await txStatus(cfg, w.tx_hash);
+      const s = await txStatus(cfg, w.tx_hash, fetch, true);   // plain=true is safe for token transfers too: those always carry an explicit result
       if (s === 'success') { await db.rpc('mark_withdrawal_sent', { p_id: w.id, p_tx: w.tx_hash }); done++; }
       else if (s === 'failed') { await db.rpc('reject_withdrawal', { p_id: w.id }); done++; }
       else if (age > 15 * 60_000) { await db.rpc('reject_withdrawal', { p_id: w.id }); done++; }   // transactions expire after about a minute: it can never arrive now
@@ -63,7 +73,8 @@ export async function confirmProcessing(db: DB) {
   return done;
 }
 
+// numbers only: BigInt values cannot be sent as JSON
 export async function hotStatus() {
   const cfg = chainCfg(), h = hot();
-  try { return { address: h.address, ...(await balancesOf(cfg, h.address)) }; } catch (e) { return { address: h.address, trx: null, usdt: null, error: String(e) }; }
+  try { const b = await balancesOf(cfg, h.address); return { address: h.address, trx: b.trx, usdt: b.usdt }; } catch (e) { return { address: h.address, trx: null, usdt: null, error: String(e) }; }
 }

@@ -49,4 +49,21 @@ Sign up normally, then run `supabase/maintenance/make_admin.sql` (with your emai
 "Move earnings to my balance" turns platform fees into your own player balance; then press Withdraw in the game to send it to your wallet.
 
 The admin page also has a **Transaction history** (deposits, withdrawals, match results, fees, earnings) with links to the block explorer.
-Run all files in `supabase/migrations/` in order (currently 7).
+Run all files in `supabase/migrations/` in order (currently 9).
+
+## Collecting deposits (sweeps)
+Deposits arrive on each player's own address. After a deposit is credited the server (1) sends that address a little TRX for the network fee,
+then (2) moves all its USDT into the payout wallet. It runs on its own once a minute when the timer is on (`schedule_deposit_scan.sql`),
+right after a player presses "check now", or with the admin button "Collect deposits now". Optional settings (Edge Function secrets):
+`SWEEP_MIN_USDT` (default 1), `SWEEP_MIN_TRX` (15), `SWEEP_TOPUP_TRX` (25). The payout wallet needs TRX to fund these top-ups.
+
+## Clean slate for testing
+`supabase/maintenance/clear_test_data.sql` resets all money records and balances (accounts and deposit addresses stay).
+It refuses to run once you set `testing_mode` to 'false' in `app_settings` (do that before launch).
+
+## Game currency: TRX or USDT
+`app_settings.asset` decides what players deposit, stake and withdraw: `"TRX"` (default after migration 9) or `"USDT"`.
+TRX needs no fee top-ups when collecting deposits (a TRX transfer only uses free bandwidth); USDT needs about 7+ TRX of energy per collection.
+The stake buttons come from `stake_options`. All limits (`min_stake`, `min_deposit`, `min_withdrawal`, `auto_withdraw_*`, `sweep_min`) are in that currency.
+If you change `asset`, run `supabase/maintenance/clear_test_data.sql` first while testing: old balances are in the old currency.
+Collected TRX deposits leave about 1 TRX at each deposit address (to cover the fee if free bandwidth is used up).

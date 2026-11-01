@@ -2,6 +2,7 @@
 // The browser never decides anything about the game: it asks the server and shows what comes back.
 import { sb } from './account.js';
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from './config.js';
+import { ASSET, STAKES } from './asset.js';
 import { startOnline, pushState, showResult, freeze, hooks, debug, forceState } from './app.js';
 
 const $ = (id) => document.getElementById(id);
@@ -37,11 +38,17 @@ const nice = (m) => (/violates check|wallets/i.test(m) ? 'Not enough balance. Ad
 // ---- lobby card
 function preview() {
   const pct = fees[players] ?? 10, pool = stake * players, fee = (pool * pct) / 100;
-  $('prize').textContent = `Winner gets ${(pool - fee).toFixed(2)} USDT (pool ${pool.toFixed(2)}, ${pct}% platform fee)`;
+  $('prize').textContent = `Winner gets ${(pool - fee).toFixed(2)} ${ASSET} (pool ${pool.toFixed(2)}, ${pct}% platform fee)`;
   document.querySelectorAll('#stakeOpts button').forEach((b) => b.setAttribute('aria-pressed', Number(b.dataset.s) === stake));
   document.querySelectorAll('#plOpts button').forEach((b) => b.setAttribute('aria-pressed', Number(b.dataset.p) === players));
 }
-document.querySelectorAll('#stakeOpts button').forEach((b) => { b.onclick = () => { stake = Number(b.dataset.s); preview(); }; });
+function renderStakes() {                        // the stake buttons come from the settings table
+  if (!STAKES.includes(stake)) stake = STAKES[Math.floor(STAKES.length / 2)];
+  $('stakeOpts').replaceChildren(...STAKES.map((s) => { const b = document.createElement('button'); b.dataset.s = s; b.textContent = s; return b; }));
+  preview();
+}
+$('stakeOpts').onclick = (e) => { const b = e.target.closest('button'); if (b) { stake = Number(b.dataset.s); preview(); } };
+document.addEventListener('settings-loaded', renderStakes);
 document.querySelectorAll('#plOpts button').forEach((b) => { b.onclick = () => { players = Number(b.dataset.p); preview(); }; });
 
 async function refreshLobby() {                  // a match left open? offer to resume it
@@ -114,16 +121,16 @@ function finish(m, me) {
   clearInterval(timer); freeze();
   const winner = m.state.winners[0], won = winner === me;
   $('timer').textContent = '';
-  showResult(won ? `You won ${Number(m.payout).toFixed(2)} USDT!` : `${cap(winner)} wins`,
+  showResult(won ? `You won ${Number(m.payout).toFixed(2)} ${ASSET}!` : `${cap(winner)} wins`,
     won ? `Pool ${Number(m.pool).toFixed(2)} minus ${m.fee_percent}% platform fee.`
-        : `Your ${Number(m.stake).toFixed(2)} USDT stake went to the winner.`);
+        : `Your ${Number(m.stake).toFixed(2)} ${ASSET} stake went to the winner.`);
 }
 
 // ---- waiting room
 function showWaiting(text) {
   const m = cur.m;
   $('waitTxt').textContent = text || `Waiting for players… ${cur.players.length}/${m.max_players}`;
-  $('waitStake').textContent = `Stake ${Number(m.stake).toFixed(2)} USDT`;
+  $('waitStake').textContent = `Stake ${Number(m.stake).toFixed(2)} ${ASSET}`;
   if (!$('waitDlg').open) $('waitDlg').showModal();
 }
 function hideWaiting() { if ($('waitDlg').open) $('waitDlg').close(); }

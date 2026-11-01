@@ -26,15 +26,13 @@
       <button id="m4p"><b>4 players, one device</b><span>Share one screen, sit where you like</span></button>
     </div>
     <div id="money" hidden>
-      <h3>Play for USDT</h3>
-      <div class="opts" id="stakeOpts" role="group" aria-label="Stake">
-        <button data-s="1" aria-pressed="false">1</button><button data-s="2" aria-pressed="false">2</button><button data-s="5" aria-pressed="true">5</button><button data-s="10" aria-pressed="false">10</button>
-      </div>
+      <h3>Play for <span class="asset">USDT</span></h3>
+      <div class="opts" id="stakeOpts" role="group" aria-label="Stake"></div>
       <div class="opts" id="plOpts" role="group" aria-label="Players">
         <button data-p="2" aria-pressed="true">2 players</button><button data-p="4" aria-pressed="false">4 players</button>
       </div>
       <p id="prize"></p>
-      <div class="row"><button id="addFunds" class="link">Add funds (USDT)</button><button id="withdraw" class="link">Withdraw</button></div>
+      <div class="row"><button id="addFunds" class="link">Add funds (<span class="asset">USDT</span>)</button><button id="withdraw" class="link">Withdraw</button></div>
       <button id="findMatch" class="go">Find match</button>
       <button id="resumeMatch" class="go" hidden>Resume your match</button>
       <p id="moneyMsg" role="status"></p>
@@ -102,9 +100,9 @@
 <script type="module" src="online.js"></script>
 <dialog id="wdDlg">
   <div class="card">
-    <h2>Withdraw USDT</h2>
+    <h2>Withdraw <span class="asset">USDT</span></h2>
     <p id="wdBal"></p>
-    <label>Amount (USDT)<input id="wdAmt" inputmode="decimal" autocomplete="off"></label>
+    <label>Amount (<span class="asset">USDT</span>)<input id="wdAmt" inputmode="decimal" autocomplete="off"></label>
     <label>Your TRON (TRC20) address<input id="wdTo" autocomplete="off" placeholder="T..." spellcheck="false"></label>
     <p class="note">Payouts are sent automatically and arrive in a minute or two (very large amounts are checked by hand). Send only to a TRON address you control: a wrong address cannot be recovered.</p>
     <button id="wdGo">Request withdrawal</button>

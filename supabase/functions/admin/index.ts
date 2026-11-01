@@ -1,8 +1,9 @@
 // Admin actions: look at the money, handle withdrawals that need a human, move your earnings to your balance.
 // Only accounts with profiles.is_admin = true are allowed.
 import { admin, cors, json, userFrom } from '../_shared/util.ts';
-import { tryPayout, confirmProcessing, hotStatus, chainCfg } from '../_shared/payout.ts';
+import { tryPayout, confirmProcessing, hotStatus, chainCfg, assetOf } from '../_shared/payout.ts';
 import { txStatus } from '../_shared/tron.js';
+import { sweepAll, confirmSweeps } from '../_shared/sweep.ts';
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: cors });
@@ -20,7 +21,11 @@ Deno.serve(async (req) => {
       if (error) return json({ error: error.message }, 500);
       let hot = null; try { hot = await hotStatus(); } catch (e) { hot = { error: String(e instanceof Error ? e.message : e) }; }
       const api = chainCfg().api, network = api.includes('nile') ? 'nile' : api.includes('shasta') ? 'shasta' : 'mainnet';
-      return json({ overview: data, hot, network });
+      await confirmSweeps(db).catch(() => null);
+      const { data: recentSweeps } = await db.from('sweeps').select('id,address,kind,status,amount,tx_hash,created_at').neq('kind', 'check').order('created_at', { ascending: false }).limit(8);
+      const { data: done } = await db.from('sweeps').select('amount').eq('kind', 'sweep').eq('status', 'confirmed').limit(5000);
+      const swept_total = (done ?? []).reduce((s: number, r: { amount: string }) => s + Number(r.amount), 0);
+      return json({ overview: data, hot, network, asset: await assetOf(db), sweeps: recentSweeps ?? [], swept_total });
     }
     if (body.action === 'pending' || body.action === 'recent') {
       const pending = body.action === 'pending';
@@ -67,6 +72,9 @@ Deno.serve(async (req) => {
       if (seen !== 'success') return json({ error: 'The network does not show this transaction as successful. Check the id (it is not the wallet address), or wait a minute after sending.' }, 400);
       const { error } = await db.rpc('mark_withdrawal_sent', { p_id: w.id, p_tx: tx });
       return error ? json({ error: error.message }, 400) : json({ ok: true });
+    }
+    if (body.action === 'sweep_now') {                             // collect deposits into the payout wallet right now
+      return json({ ok: true, summary: await sweepAll(db, 20) });
     }
     if (body.action === 'move_earnings') {                         // platform fees -> your own player balance; then use Withdraw
       const amount = Number(body.amount);

@@ -96,9 +96,10 @@ export async function broadcast(cfg, signed, fetchFn = fetch) {
   return { accepted: r?.result === true || r?.code === 'DUP_TRANSACTION_ERROR', detail: r };
 }
 // 'success' | 'failed' | 'unknown' (not on the chain yet)
-export async function txStatus(cfg, txid, fetchFn = fetch) {
+export async function txStatus(cfg, txid, fetchFn = fetch, plain = false) {
   const i = await post(cfg, '/wallet/gettransactioninfobyid', { value: txid }, fetchFn);
   if (!i || !i.id) return 'unknown';
+  if (plain && i.blockNumber !== undefined && !i.receipt?.result && i.result !== 'FAILED') return 'success';   // a plain TRX transfer that made it into a block
   if (i.receipt?.result === 'SUCCESS') return 'success';
   if (i.result === 'FAILED' || (i.receipt?.result && i.receipt.result !== 'SUCCESS')) return 'failed';
   return 'unknown';
@@ -109,5 +110,37 @@ export async function balancesOf(cfg, address, fetchFn = fetch) {
   if (!res.ok) throw new Error(`TRON node answered ${res.status}`);
   const a = (await res.json())?.data?.[0];
   const usdt = (a?.trc20 ?? []).map((o) => o[cfg.contract]).find((v) => v !== undefined);
-  return { trx: Number(a?.balance ?? 0) / 1e6, usdt: Number(usdt ?? 0) / 1e6 };
+  return { trx: Number(a?.balance ?? 0) / 1e6, trxSun: BigInt(a?.balance ?? 0), usdt: Number(usdt ?? 0) / 1e6, usdtMicro: BigInt(usdt ?? '0') };
+}
+
+// ---- plain TRX transfer (used to give a deposit address a little TRX for network fees) ----
+const varintHex = (n) => { let v = BigInt(n), out = ''; do { let b = Number(v & 0x7fn); v >>= 7n; if (v) b |= 0x80; out += b.toString(16).padStart(2, '0'); } while (v); return out; };
+export async function buildSignedTrxTransfer(cfg, { fromPriv, fromAddress, to, amountSun }, fetchFn = fetch) {
+  const tx = await post(cfg, '/wallet/createtransaction', { owner_address: fromAddress, to_address: to, amount: Number(amountSun), visible: true }, fetchFn);
+  if (!tx?.raw_data_hex || !tx?.txID) throw new Error('The node could not build the TRX transfer.');
+  const raw = tx.raw_data_hex.toLowerCase(), c = tx.raw_data?.contract ?? [];
+  const expected = '0a15' + toHex(b58.decode(fromAddress)) + '1215' + toHex(b58.decode(to)) + '18' + varintHex(amountSun);   // owner, recipient, amount: exactly what we asked for
+  if (toHex(sha256(hex(raw))) !== String(tx.txID).toLowerCase() || c.length !== 1 || c[0].type !== 'TransferContract' || !raw.includes(expected)) {
+    throw new Error('Refusing to sign: the built TRX transfer is not the one that was requested.');
+  }
+  const sig = secp256k1.sign(hex(tx.txID), hex(fromPriv));
+  const signature = sig.r.toString(16).padStart(64, '0') + sig.s.toString(16).padStart(64, '0') + sig.recovery.toString(16).padStart(2, '0');
+  return { txid: String(tx.txID).toLowerCase(), signed: { ...tx, signature: [signature] } };
+}
+
+// Turn TronGrid's "transactions of an address" reply into credit-able TRX deposits: successful plain TRX transfers INTO this address,
+// at least `min` TRX. Transfers sent by `ignoreFrom` (our own payout wallet) are not deposits.
+export function parseTrxDeposits(json, address, min = 1, ignoreFrom = '') {
+  const mine = toHex(b58.decode(address)), skip = ignoreFrom ? toHex(b58.decode(ignoreFrom)) : '';
+  const norm = (a) => (typeof a === 'string' && a.startsWith('T') ? toHex(b58.decode(a)) : String(a ?? '').toLowerCase());
+  const out = [];
+  for (const t of json?.data ?? []) {
+    const c = t.raw_data?.contract?.[0], v = c?.parameter?.value;
+    if (c?.type !== 'TransferContract' || !t.txID || t.ret?.[0]?.contractRet !== 'SUCCESS') continue;
+    if (norm(v?.to_address) !== mine || (skip && norm(v?.owner_address) === skip)) continue;
+    let sun; try { sun = BigInt(v.amount); } catch { continue; }
+    if (sun < BigInt(Math.round(min * 1e6))) continue;
+    out.push({ tx: t.txID, amount: `${sun / 1000000n}.${(sun % 1000000n).toString().padStart(6, '0')}` });
+  }
+  return out;
 }

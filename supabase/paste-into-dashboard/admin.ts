@@ -79,9 +79,10 @@ async function broadcast(cfg, signed, fetchFn = fetch) {
   const r = await post(cfg, "/wallet/broadcasttransaction", signed, fetchFn);
   return { accepted: r?.result === true || r?.code === "DUP_TRANSACTION_ERROR", detail: r };
 }
-async function txStatus(cfg, txid, fetchFn = fetch) {
+async function txStatus(cfg, txid, fetchFn = fetch, plain = false) {
   const i = await post(cfg, "/wallet/gettransactioninfobyid", { value: txid }, fetchFn);
   if (!i || !i.id) return "unknown";
+  if (plain && i.blockNumber !== void 0 && !i.receipt?.result && i.result !== "FAILED") return "success";
   if (i.receipt?.result === "SUCCESS") return "success";
   if (i.result === "FAILED" || i.receipt?.result && i.receipt.result !== "SUCCESS") return "failed";
   return "unknown";
@@ -91,7 +92,29 @@ async function balancesOf(cfg, address, fetchFn = fetch) {
   if (!res.ok) throw new Error(`TRON node answered ${res.status}`);
   const a = (await res.json())?.data?.[0];
   const usdt = (a?.trc20 ?? []).map((o) => o[cfg.contract]).find((v) => v !== void 0);
-  return { trx: Number(a?.balance ?? 0) / 1e6, usdt: Number(usdt ?? 0) / 1e6 };
+  return { trx: Number(a?.balance ?? 0) / 1e6, trxSun: BigInt(a?.balance ?? 0), usdt: Number(usdt ?? 0) / 1e6, usdtMicro: BigInt(usdt ?? "0") };
+}
+var varintHex = (n) => {
+  let v = BigInt(n), out = "";
+  do {
+    let b = Number(v & 0x7fn);
+    v >>= 7n;
+    if (v) b |= 128;
+    out += b.toString(16).padStart(2, "0");
+  } while (v);
+  return out;
+};
+async function buildSignedTrxTransfer(cfg, { fromPriv, fromAddress, to, amountSun }, fetchFn = fetch) {
+  const tx = await post(cfg, "/wallet/createtransaction", { owner_address: fromAddress, to_address: to, amount: Number(amountSun), visible: true }, fetchFn);
+  if (!tx?.raw_data_hex || !tx?.txID) throw new Error("The node could not build the TRX transfer.");
+  const raw = tx.raw_data_hex.toLowerCase(), c = tx.raw_data?.contract ?? [];
+  const expected = "0a15" + toHex(b58.decode(fromAddress)) + "1215" + toHex(b58.decode(to)) + "18" + varintHex(amountSun);
+  if (toHex(sha256(hex(raw))) !== String(tx.txID).toLowerCase() || c.length !== 1 || c[0].type !== "TransferContract" || !raw.includes(expected)) {
+    throw new Error("Refusing to sign: the built TRX transfer is not the one that was requested.");
+  }
+  const sig = secp256k1.sign(hex(tx.txID), hex(fromPriv));
+  const signature = sig.r.toString(16).padStart(64, "0") + sig.s.toString(16).padStart(64, "0") + sig.recovery.toString(16).padStart(2, "0");
+  return { txid: String(tx.txID).toLowerCase(), signed: { ...tx, signature: [signature] } };
 }
 
 // ../../mnt/user-data/outputs/ludo/supabase/functions/_shared/payout.ts
@@ -104,6 +127,14 @@ var chainCfg = () => ({
 });
 var hot = () => hotWallet(env("HD_SEED"));
 var MIN_TRX_FOR_FEES = 30;
+async function setting(db, key) {
+  const { data } = await db.from("app_settings").select("value").eq("key", key).maybeSingle();
+  return Number(data?.value ?? 0);
+}
+async function assetOf(db) {
+  const { data } = await db.from("app_settings").select("value").eq("key", "asset").maybeSingle();
+  return data?.value === "TRX" ? "TRX" : "USDT";
+}
 async function setNote(db, id, text) {
   try {
     await db.from("withdrawals").update({ note: text }).eq("id", id);
@@ -115,14 +146,15 @@ async function tryPayout(db, w) {
   if (!claimed) return { status: "queued", reason: "busy" };
   let stored = false;
   try {
-    const cfg = chainCfg(), h = hot(), amount = Number(w.amount);
+    const cfg = chainCfg(), h = hot(), amount = Number(w.amount), asset = await assetOf(db);
     const bal = await balancesOf(cfg, h.address);
-    if (bal.usdt < amount || bal.trx < MIN_TRX_FOR_FEES) {
+    const short = asset === "TRX" ? bal.trx < amount + 1 : bal.usdt < amount || bal.trx < MIN_TRX_FOR_FEES;
+    if (short) {
       await db.rpc("release_withdrawal", { p_id: w.id });
-      await setNote(db, w.id, `Payout wallet is low: it holds ${bal.usdt.toFixed(2)} USDT and ${bal.trx.toFixed(1)} TRX, but needs ${amount} USDT and about ${MIN_TRX_FOR_FEES} TRX for fees. Top it up, then press "Try automatic payout again".`);
+      await setNote(db, w.id, asset === "TRX" ? `Payout wallet is low: it holds ${bal.trx.toFixed(2)} TRX but needs ${amount} TRX plus about 1 TRX for the fee. Top it up, then press "Try automatic payout again".` : `Payout wallet is low: it holds ${bal.usdt.toFixed(2)} USDT and ${bal.trx.toFixed(1)} TRX, but needs ${amount} USDT and about ${MIN_TRX_FOR_FEES} TRX for fees. Top it up, then press "Try automatic payout again".`);
       return { status: "queued", reason: "wallet" };
     }
-    const { txid, signed } = await buildSignedTransfer(cfg, { fromPriv: h.priv, fromAddress: h.address, to: w.to_address, amountMicro: toMicro(w.amount) });
+    const { txid, signed } = asset === "TRX" ? await buildSignedTrxTransfer(cfg, { fromPriv: h.priv, fromAddress: h.address, to: w.to_address, amountSun: toMicro(w.amount) }) : await buildSignedTransfer(cfg, { fromPriv: h.priv, fromAddress: h.address, to: w.to_address, amountMicro: toMicro(w.amount) });
     await db.rpc("set_withdrawal_tx", { p_id: w.id, p_tx: txid });
     stored = true;
     await broadcast(cfg, signed);
@@ -148,7 +180,7 @@ async function confirmProcessing(db) {
         if (age > 5 * 6e4) await db.rpc("release_withdrawal", { p_id: w.id });
         continue;
       }
-      const s = await txStatus(cfg, w.tx_hash);
+      const s = await txStatus(cfg, w.tx_hash, fetch, true);
       if (s === "success") {
         await db.rpc("mark_withdrawal_sent", { p_id: w.id, p_tx: w.tx_hash });
         done++;
@@ -168,10 +200,92 @@ async function confirmProcessing(db) {
 async function hotStatus() {
   const cfg = chainCfg(), h = hot();
   try {
-    return { address: h.address, ...await balancesOf(cfg, h.address) };
+    const b = await balancesOf(cfg, h.address);
+    return { address: h.address, trx: b.trx, usdt: b.usdt };
   } catch (e) {
     return { address: h.address, trx: null, usdt: null, error: String(e) };
   }
+}
+
+// ../../mnt/user-data/outputs/ludo/supabase/functions/_shared/sweep.ts
+var env2 = (k, d) => Deno.env.get(k) || d;
+var MIN_USDT = () => Number(env2("SWEEP_MIN_USDT", "1"));
+var MIN_TRX = () => Number(env2("SWEEP_MIN_TRX", "15"));
+var TOPUP_TRX = () => Number(env2("SWEEP_TOPUP_TRX", "25"));
+var HOT_KEEP_TRX = 30;
+async function confirmSweeps(db, address) {
+  let q = db.from("sweeps").select("id,kind,tx_hash,created_at").eq("status", "sent");
+  if (address) q = q.eq("address", address);
+  const { data } = await q.limit(100);
+  const cfg = chainCfg();
+  for (const s of data ?? []) {
+    try {
+      const age = Date.now() - new Date(s.created_at).getTime();
+      const st = s.tx_hash ? await txStatus(cfg, s.tx_hash, fetch, true) : "failed";
+      if (st === "success") await db.from("sweeps").update({ status: "confirmed" }).eq("id", s.id);
+      else if (st === "failed" || age > 15 * 6e4) await db.from("sweeps").update({ status: "failed" }).eq("id", s.id);
+    } catch (e) {
+      console.error("confirmSweeps", s.id, String(e));
+    }
+  }
+}
+async function sweepAddress(db, c) {
+  const cfg = chainCfg(), h = hot();
+  await confirmSweeps(db, c.address);
+  const { data: open } = await db.from("sweeps").select("id").eq("address", c.address).eq("status", "sent");
+  if ((open ?? []).length) return "waiting";
+  const since = new Date(Date.now() - 36e5).toISOString();
+  const { data: failed } = await db.from("sweeps").select("id").eq("address", c.address).eq("status", "failed").gte("created_at", since);
+  if ((failed ?? []).length >= 3) return "paused";
+  const bal = await balancesOf(cfg, c.address), asset = await assetOf(db);
+  if (asset === "TRX") {
+    const min = await setting(db, "sweep_min") || 5, keep = 1000000n;
+    if (bal.trx < min) {
+      await db.from("sweeps").insert({ user_id: c.user_id, address: c.address, kind: "check", status: "empty", amount: bal.trx });
+      return "empty";
+    }
+    const key = privateKeyFor(Deno.env.get("HD_SEED") ?? "", c.derivation_index);
+    if (addressFromPrivateKey(key) !== c.address) throw new Error("The derived key does not match this deposit address.");
+    const sun = bal.trxSun - keep;
+    const { txid: txid2, signed: signed2 } = await buildSignedTrxTransfer(cfg, { fromPriv: key, fromAddress: c.address, to: h.address, amountSun: sun });
+    await db.from("sweeps").insert({ user_id: c.user_id, address: c.address, kind: "sweep", status: "sent", amount: Number(sun) / 1e6, tx_hash: txid2 });
+    await broadcast(cfg, signed2);
+    return "sweeping";
+  }
+  if (bal.usdtMicro < toMicro(String(MIN_USDT()))) {
+    await db.from("sweeps").insert({ user_id: c.user_id, address: c.address, kind: "check", status: "empty", amount: bal.usdt });
+    return "empty";
+  }
+  if (bal.trx < MIN_TRX()) {
+    const hb = await balancesOf(cfg, h.address);
+    if (hb.trx < TOPUP_TRX() + HOT_KEEP_TRX) return "hot_low";
+    const { txid: txid2, signed: signed2 } = await buildSignedTrxTransfer(cfg, { fromPriv: h.priv, fromAddress: h.address, to: c.address, amountSun: BigInt(Math.round(TOPUP_TRX() * 1e6)) });
+    await db.from("sweeps").insert({ user_id: c.user_id, address: c.address, kind: "topup", status: "sent", amount: TOPUP_TRX(), tx_hash: txid2 });
+    await broadcast(cfg, signed2);
+    return "funding";
+  }
+  const priv = privateKeyFor(Deno.env.get("HD_SEED") ?? "", c.derivation_index);
+  if (addressFromPrivateKey(priv) !== c.address) throw new Error("The derived key does not match this deposit address.");
+  const feeLimit = Math.min(cfg.feeLimit, Math.floor((bal.trx - 1) * 1e6));
+  const { txid, signed } = await buildSignedTransfer({ ...cfg, feeLimit }, { fromPriv: priv, fromAddress: c.address, to: h.address, amountMicro: bal.usdtMicro });
+  await db.from("sweeps").insert({ user_id: c.user_id, address: c.address, kind: "sweep", status: "sent", amount: bal.usdt, tx_hash: txid });
+  await broadcast(cfg, signed);
+  return "sweeping";
+}
+async function sweepAll(db, limit = 10) {
+  await confirmSweeps(db);
+  const { data } = await db.rpc("sweep_candidates", { p_limit: limit });
+  const summary = {};
+  for (const c of data ?? []) {
+    let r = "error";
+    try {
+      r = await sweepAddress(db, c);
+    } catch (e) {
+      console.error("sweep", c.address, String(e));
+    }
+    summary[r] = (summary[r] ?? 0) + 1;
+  }
+  return summary;
 }
 
 // ../../mnt/user-data/outputs/ludo/supabase/functions/admin/index.ts
@@ -195,7 +309,11 @@ Deno.serve(async (req) => {
         hot2 = { error: String(e instanceof Error ? e.message : e) };
       }
       const api = chainCfg().api, network = api.includes("nile") ? "nile" : api.includes("shasta") ? "shasta" : "mainnet";
-      return json({ overview: data, hot: hot2, network });
+      await confirmSweeps(db).catch(() => null);
+      const { data: recentSweeps } = await db.from("sweeps").select("id,address,kind,status,amount,tx_hash,created_at").neq("kind", "check").order("created_at", { ascending: false }).limit(8);
+      const { data: done } = await db.from("sweeps").select("amount").eq("kind", "sweep").eq("status", "confirmed").limit(5e3);
+      const swept_total = (done ?? []).reduce((s, r) => s + Number(r.amount), 0);
+      return json({ overview: data, hot: hot2, network, asset: await assetOf(db), sweeps: recentSweeps ?? [], swept_total });
     }
     if (body.action === "pending" || body.action === "recent") {
       const pending = body.action === "pending";
@@ -250,6 +368,9 @@ Deno.serve(async (req) => {
       if (seen !== "success") return json({ error: "The network does not show this transaction as successful. Check the id (it is not the wallet address), or wait a minute after sending." }, 400);
       const { error } = await db.rpc("mark_withdrawal_sent", { p_id: w.id, p_tx: tx });
       return error ? json({ error: error.message }, 400) : json({ ok: true });
+    }
+    if (body.action === "sweep_now") {
+      return json({ ok: true, summary: await sweepAll(db, 20) });
     }
     if (body.action === "move_earnings") {
       const amount = Number(body.amount);

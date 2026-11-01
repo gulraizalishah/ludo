@@ -18,9 +18,13 @@
   <p id="msg" role="status" style="color:#ffb4a8">Loading…</p>
   <div id="denied" class="box" hidden><h3 style="margin-top:0">This account is not an admin</h3><p style="color:var(--mute)">You are logged in, but this account has no admin rights.</p><button id="logout2" style="background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:8px 14px">Log out</button></div>
   <div id="panel" hidden>
-    <div class="box"><h3 style="margin-top:0">Money overview</h3><table id="ov"></table></div>
+    <div class="box"><h3 style="margin-top:0">Money overview (in <span class="asset">USDT</span>)</h3><table id="ov"></table></div>
     <div class="box"><h3 style="margin-top:0">Payout wallet (pays withdrawals automatically)</h3><table id="hot"></table>
-      <p style="color:var(--mute);font-size:.85rem">Keep USDT in it for payouts and some TRX for network fees. Send funds to the address above from your own wallet.</p></div>
+      <p style="color:var(--mute);font-size:.85rem">Keep <span class="asset">USDT</span> in it for payouts<span id="feeNote"> and some TRX for network fees</span>. Send funds to the address above from your own wallet.</p></div>
+    <div class="box"><h3 style="margin-top:0">Collecting deposits</h3>
+      <p id="swept" style="margin-top:0"></p><div style="overflow-x:auto"><table id="sw"></table></div>
+      <button id="sweepBtn" style="margin-top:8px;background:#2f7de1;border-radius:12px;padding:10px 16px;font-weight:700">Collect deposits now</button>
+      <p style="color:var(--mute);font-size:.85rem">Deposits are moved from each player's address into the payout wallet automatically (about once a minute when the timer is on). This button does it right away.</p></div>
     <div class="box"><h3 style="margin-top:0">Your earnings</h3><p id="earn"></p>
       <button id="takeBtn" style="background:#2fa35b;border-radius:12px;padding:10px 16px;font-weight:700">Move earnings to my balance</button>
       <p style="color:var(--mute);font-size:.85rem">Then open the game with this same account and press Withdraw to send it to your wallet.</p></div>

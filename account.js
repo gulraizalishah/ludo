@@ -1,6 +1,7 @@
 // Accounts + wallet display. Practice games work without logging in.
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/+esm';
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from './config.js';
+import { ASSET, loadSettings } from './asset.js';
 
 const $ = (id) => document.getElementById(id);
 const configured = SUPABASE_URL.startsWith('https://');
@@ -49,7 +50,7 @@ $('logout').onclick = () => sb.auth.signOut();
 async function refresh(id) {
   const { data } = await sb.from('wallets').select('available,locked').eq('user_id', id).maybeSingle();
   if (!data) return;
-  $('bal').textContent = `${fmt(data.available)} USDT`;
+  $('bal').textContent = `${fmt(data.available)} ${ASSET}`;
   $('locked').textContent = Number(data.locked) > 0 ? `+ ${fmt(data.locked)} in play` : '';
 }
 
@@ -64,6 +65,7 @@ async function onUser(user) {
   if (pending) { await sb.from('profiles').update({ username: pending }).eq('id', user.id); localStorage.removeItem('pendingName'); }
   const { data: p } = await sb.from('profiles').select('username').eq('id', user.id).maybeSingle();
   if (p?.username) $('who').textContent = p.username;
+  await loadSettings(sb);
   await refresh(user.id);
   channel = sb.channel('wallet-' + user.id)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'wallets', filter: `user_id=eq.${user.id}` }, () => refresh(user.id))

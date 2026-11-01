@@ -2,15 +2,15 @@
 // Secrets (Edge Functions > Secrets): HD_SEED (required), CRON_SECRET (for the timer), TRONGRID_API_KEY (needed on mainnet),
 // TRON_API and USDT_CONTRACT (optional: default to the Nile TEST network and its test USDT).
 import { admin, cors, json, userFrom } from '../_shared/util.ts';
-import { deriveAddress, parseDeposits, isValidTronAddress } from '../_shared/tron.js';
-import { setting, tryPayout, confirmProcessing, setNote } from '../_shared/payout.ts';
+import { deriveAddress, parseDeposits, parseTrxDeposits, isValidTronAddress } from '../_shared/tron.js';
+import { setting, tryPayout, confirmProcessing, setNote, assetOf, hot } from '../_shared/payout.ts';
+import { sweepAll, sweepAddress } from '../_shared/sweep.ts';
 import type { PayoutResult } from '../_shared/payout.ts';
 
 const env = (k: string, d = '') => Deno.env.get(k) || d;
 const API = () => env('TRON_API', 'https://nile.trongrid.io');
 const USDT = () => env('USDT_CONTRACT', 'TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf');   // Nile test USDT
 const NETWORK = () => (API().includes('nile') ? 'nile' : API().includes('shasta') ? 'shasta' : 'mainnet');
-const MIN_DEPOSIT = 1;   // USDT; smaller transfers are ignored (dust / address-poisoning spam)
 type DB = ReturnType<typeof admin>;
 
 Deno.serve(async (req) => {
@@ -30,7 +30,8 @@ Deno.serve(async (req) => {
         await new Promise((ok) => setTimeout(ok, 400));            // stay under TronGrid's rate limit
       }
       const confirmed = await confirmProcessing(db);               // also settles withdrawals that were being sent
-      return json({ ok: true, scanned: data?.length ?? 0, credited, confirmed });
+      const swept = await sweepAll(db, 10).catch((e) => ({ error: String(e) }));   // and collects deposits into the payout wallet
+      return json({ ok: true, scanned: data?.length ?? 0, credited, confirmed, swept });
     }
 
     const user = await userFrom(req);
@@ -55,8 +56,18 @@ Deno.serve(async (req) => {
     }
     if (action === 'check') await confirmProcessing(db);          // settle payouts first, whatever else happens
     const address = await addressFor(db, user.id);
-    if (action === 'address') return json({ address, network: NETWORK(), contract: USDT(), min: MIN_DEPOSIT });
-    if (action === 'check') return json({ credited: await scan(db, user.id, address), network: NETWORK() });
+    if (action === 'address') return json({ address, network: NETWORK(), contract: USDT(), asset: await assetOf(db), min: (await setting(db, 'min_deposit')) || 1 });
+    if (action === 'check') {
+      const credited = await scan(db, user.id, address);
+      let collecting = null;                                       // a new deposit: start moving it into the payout wallet right away
+      if (credited.length) {
+        try {
+          const { data: a } = await db.from('deposit_addresses').select('user_id,address,derivation_index').eq('user_id', user.id).maybeSingle();
+          if (a) collecting = await sweepAddress(db, a);
+        } catch (e) { console.error('sweep after check', String(e)); }
+      }
+      return json({ credited, network: NETWORK(), collecting });
+    }
     return json({ error: 'bad action' }, 400);
   } catch (e) {
     return json({ error: String(e instanceof Error ? e.message : e) }, 500);
@@ -81,15 +92,19 @@ async function addressFor(db: DB, uid: string): Promise<string> {
   return address;
 }
 
-// Read the confirmed USDT transfers into this address and credit each one once (the database refuses repeats).
+// Read the confirmed deposits into this address (TRX or USDT, depending on the game currency) and credit each one once.
 async function scan(db: DB, uid: string, address: string) {
-  const url = `${API()}/v1/accounts/${address}/transactions/trc20?only_confirmed=true&only_to=true&limit=200&contract_address=${USDT()}`;
+  const asset = await assetOf(db), min = (await setting(db, 'min_deposit')) || 1;
+  const url = asset === 'TRX'
+    ? `${API()}/v1/accounts/${address}/transactions?only_confirmed=true&only_to=true&limit=200`
+    : `${API()}/v1/accounts/${address}/transactions/trc20?only_confirmed=true&only_to=true&limit=200&contract_address=${USDT()}`;
   const headers: Record<string, string> = {};
   if (env('TRONGRID_API_KEY')) headers['TRON-PRO-API-KEY'] = env('TRONGRID_API_KEY');
   const res = await fetch(url, { headers });
   if (!res.ok) throw new Error(`TronGrid answered ${res.status}`);
+  const found = asset === 'TRX' ? parseTrxDeposits(await res.json(), address, min, hot().address) : parseDeposits(await res.json(), address, USDT(), min);
   const credited: { tx: string; amount: string }[] = [];
-  for (const d of parseDeposits(await res.json(), address, USDT(), MIN_DEPOSIT)) {
+  for (const d of found) {
     const { data, error } = await db.rpc('credit_deposit', { p_user: uid, p_tx: d.tx, p_amount: d.amount });
     if (error) throw new Error(error.message);
     if (data === true) credited.push(d);
