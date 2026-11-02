@@ -31,6 +31,7 @@ Deno.serve(async (req) => {
       }
       const confirmed = await confirmProcessing(db);               // also settles withdrawals that were being sent
       const swept = await sweepAll(db, 10).catch((e) => ({ error: String(e) }));   // and collects deposits into the payout wallet
+      await db.from('app_settings').upsert({ key: 'last_scan_at', value: new Date().toISOString() }, { onConflict: 'key' });   // lets the admin page show that the timer is alive
       return json({ ok: true, scanned: data?.length ?? 0, credited, confirmed, swept });
     }
 
@@ -59,14 +60,13 @@ Deno.serve(async (req) => {
     if (action === 'address') return json({ address, network: NETWORK(), contract: USDT(), asset: await assetOf(db), min: (await setting(db, 'min_deposit')) || 1 });
     if (action === 'check') {
       const credited = await scan(db, user.id, address);
-      let collecting = null;                                       // a new deposit: start moving it into the payout wallet right away
-      if (credited.length) {
-        try {
-          const { data: a } = await db.from('deposit_addresses').select('user_id,address,derivation_index').eq('user_id', user.id).maybeSingle();
-          if (a) collecting = await sweepAddress(db, a);
-        } catch (e) { console.error('sweep after check', String(e)); }
-      }
-      return json({ credited, network: NETWORK(), collecting });
+      let collecting: string | null = null, collectingError: string | null = null;
+      try {                                                        // move this player's deposit into the payout wallet (also repairs a collection that was missed earlier)
+        const { data: cands } = await db.rpc('sweep_candidates', { p_limit: 200 });
+        const mine = (cands ?? []).find((c: { user_id: string }) => c.user_id === user.id);
+        if (mine) collecting = await sweepAddress(db, mine);
+      } catch (e) { collectingError = String(e instanceof Error ? e.message : e).slice(0, 200); console.error('collect after check', collectingError); }
+      return json({ credited, network: NETWORK(), collecting, collectingError });
     }
     return json({ error: 'bad action' }, 400);
   } catch (e) {

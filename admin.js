@@ -43,7 +43,7 @@ async function show() {
   }
 }
 async function overview() {
-  const { overview: o, hot: hotRaw, network: net, sweeps, swept_total, asset: a } = await api({ action: 'overview' }), hot = hotRaw ?? {};
+  const { overview: o, hot: hotRaw, network: net, sweeps, swept_total, asset: a, last_scan_at } = await api({ action: 'overview' }), hot = hotRaw ?? {};
   network = net || network; asset = a || asset;
   document.querySelectorAll('.asset').forEach((e) => { e.textContent = asset; }); $('feeNote').hidden = asset === 'TRX';
   const f = (n) => Number(n).toFixed(2), rows = [
@@ -58,6 +58,9 @@ async function overview() {
   const h = $('hot'), hrows = !hot.address ? [['Payout wallet', hot.error || 'not set up yet (add the HD_SEED secret)']] : asset === 'TRX' ? [['Address', hot.address], ['TRX balance', hot.trx == null ? 'unknown' : f(hot.trx)]] : [['Address', hot.address], ['USDT', hot.usdt == null ? 'unknown' : f(hot.usdt)], ['TRX for fees', hot.trx == null ? 'unknown' : f(hot.trx)]];
   h.replaceChildren(...hrows.map(([k, v]) => { const r = el('tr'); r.append(el('td', k), el('td', String(v))); return r; }));
   if (hot && hot.usdt != null && (asset === 'TRX' ? hot.trx < Number(o.pending_amount) + 1 : hot.usdt < Number(o.pending_amount) || hot.trx < 30)) { const r = el('tr'); r.append(el('td', 'Warning'), el('td', 'Payout wallet is low: top it up so withdrawals keep being sent automatically.', 'bad')); h.append(r); }
+  const age = last_scan_at ? Math.round((Date.now() - new Date(last_scan_at).getTime()) / 1000) : null, alive = age !== null && age < 180;
+  $('timerState').textContent = alive ? `Automatic deposit collecting: running (last ran ${age} seconds ago)` : age === null ? 'Automatic deposit collecting: NOT RUNNING. The timer was never started (see the setup steps).' : `Automatic deposit collecting: STOPPED (last ran ${Math.round(age / 60)} minutes ago)`;
+  $('timerState').className = alive ? 'good' : 'bad';
   $('swept').textContent = `Collected into the payout wallet so far: ${f(swept_total ?? 0)} ${asset}`;
   const sh = el('tr'); ['Time', 'What', 'Amount', 'Status', ''].forEach((t) => sh.append(el('th', t)));
   const WHAT = { topup: 'TRX for fees', sweep: `${asset} collected` }, srows = (sweeps ?? []).map((s) => {

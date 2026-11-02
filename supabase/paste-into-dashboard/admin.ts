@@ -155,7 +155,8 @@ async function tryPayout(db, w) {
       return { status: "queued", reason: "wallet" };
     }
     const { txid, signed } = asset === "TRX" ? await buildSignedTrxTransfer(cfg, { fromPriv: h.priv, fromAddress: h.address, to: w.to_address, amountSun: toMicro(w.amount) }) : await buildSignedTransfer(cfg, { fromPriv: h.priv, fromAddress: h.address, to: w.to_address, amountMicro: toMicro(w.amount) });
-    await db.rpc("set_withdrawal_tx", { p_id: w.id, p_tx: txid });
+    const saved = await db.rpc("set_withdrawal_tx", { p_id: w.id, p_tx: txid });
+    if (saved.error) throw new Error("Could not record the transaction id: " + saved.error.message);
     stored = true;
     await broadcast(cfg, signed);
     await setNote(db, w.id, null);
@@ -213,6 +214,10 @@ var MIN_USDT = () => Number(env2("SWEEP_MIN_USDT", "1"));
 var MIN_TRX = () => Number(env2("SWEEP_MIN_TRX", "15"));
 var TOPUP_TRX = () => Number(env2("SWEEP_TOPUP_TRX", "25"));
 var HOT_KEEP_TRX = 30;
+var must = (r, what) => {
+  if (r.error) throw new Error(`${what}: ${r.error.message}`);
+  return r.data;
+};
 async function confirmSweeps(db, address) {
   let q = db.from("sweeps").select("id,kind,tx_hash,created_at").eq("status", "sent");
   if (address) q = q.eq("address", address);
@@ -232,7 +237,7 @@ async function confirmSweeps(db, address) {
 async function sweepAddress(db, c) {
   const cfg = chainCfg(), h = hot();
   await confirmSweeps(db, c.address);
-  const { data: open } = await db.from("sweeps").select("id").eq("address", c.address).eq("status", "sent");
+  const open = must(await db.from("sweeps").select("id").eq("address", c.address).eq("status", "sent"), "Cannot read the sweeps table (was migration 8 run?)");
   if ((open ?? []).length) return "waiting";
   const since = new Date(Date.now() - 36e5).toISOString();
   const { data: failed } = await db.from("sweeps").select("id").eq("address", c.address).eq("status", "failed").gte("created_at", since);
@@ -241,26 +246,26 @@ async function sweepAddress(db, c) {
   if (asset === "TRX") {
     const min = await setting(db, "sweep_min") || 5, keep = 1000000n;
     if (bal.trx < min) {
-      await db.from("sweeps").insert({ user_id: c.user_id, address: c.address, kind: "check", status: "empty", amount: bal.trx });
+      must(await db.from("sweeps").insert({ user_id: c.user_id, address: c.address, kind: "check", status: "empty", amount: bal.trx }), "Cannot record the sweep");
       return "empty";
     }
     const key = privateKeyFor(Deno.env.get("HD_SEED") ?? "", c.derivation_index);
     if (addressFromPrivateKey(key) !== c.address) throw new Error("The derived key does not match this deposit address.");
     const sun = bal.trxSun - keep;
     const { txid: txid2, signed: signed2 } = await buildSignedTrxTransfer(cfg, { fromPriv: key, fromAddress: c.address, to: h.address, amountSun: sun });
-    await db.from("sweeps").insert({ user_id: c.user_id, address: c.address, kind: "sweep", status: "sent", amount: Number(sun) / 1e6, tx_hash: txid2 });
+    must(await db.from("sweeps").insert({ user_id: c.user_id, address: c.address, kind: "sweep", status: "sent", amount: Number(sun) / 1e6, tx_hash: txid2 }), "Cannot record the sweep");
     await broadcast(cfg, signed2);
     return "sweeping";
   }
   if (bal.usdtMicro < toMicro(String(MIN_USDT()))) {
-    await db.from("sweeps").insert({ user_id: c.user_id, address: c.address, kind: "check", status: "empty", amount: bal.usdt });
+    must(await db.from("sweeps").insert({ user_id: c.user_id, address: c.address, kind: "check", status: "empty", amount: bal.usdt }), "Cannot record the sweep");
     return "empty";
   }
   if (bal.trx < MIN_TRX()) {
     const hb = await balancesOf(cfg, h.address);
     if (hb.trx < TOPUP_TRX() + HOT_KEEP_TRX) return "hot_low";
     const { txid: txid2, signed: signed2 } = await buildSignedTrxTransfer(cfg, { fromPriv: h.priv, fromAddress: h.address, to: c.address, amountSun: BigInt(Math.round(TOPUP_TRX() * 1e6)) });
-    await db.from("sweeps").insert({ user_id: c.user_id, address: c.address, kind: "topup", status: "sent", amount: TOPUP_TRX(), tx_hash: txid2 });
+    must(await db.from("sweeps").insert({ user_id: c.user_id, address: c.address, kind: "topup", status: "sent", amount: TOPUP_TRX(), tx_hash: txid2 }), "Cannot record the sweep");
     await broadcast(cfg, signed2);
     return "funding";
   }
@@ -268,7 +273,7 @@ async function sweepAddress(db, c) {
   if (addressFromPrivateKey(priv) !== c.address) throw new Error("The derived key does not match this deposit address.");
   const feeLimit = Math.min(cfg.feeLimit, Math.floor((bal.trx - 1) * 1e6));
   const { txid, signed } = await buildSignedTransfer({ ...cfg, feeLimit }, { fromPriv: priv, fromAddress: c.address, to: h.address, amountMicro: bal.usdtMicro });
-  await db.from("sweeps").insert({ user_id: c.user_id, address: c.address, kind: "sweep", status: "sent", amount: bal.usdt, tx_hash: txid });
+  must(await db.from("sweeps").insert({ user_id: c.user_id, address: c.address, kind: "sweep", status: "sent", amount: bal.usdt, tx_hash: txid }), "Cannot record the sweep");
   await broadcast(cfg, signed);
   return "sweeping";
 }
@@ -282,6 +287,7 @@ async function sweepAll(db, limit = 10) {
       r = await sweepAddress(db, c);
     } catch (e) {
       console.error("sweep", c.address, String(e));
+      summary.errors = [...summary.errors ?? [], String(e instanceof Error ? e.message : e).slice(0, 160)];
     }
     summary[r] = (summary[r] ?? 0) + 1;
   }
@@ -313,7 +319,8 @@ Deno.serve(async (req) => {
       const { data: recentSweeps } = await db.from("sweeps").select("id,address,kind,status,amount,tx_hash,created_at").neq("kind", "check").order("created_at", { ascending: false }).limit(8);
       const { data: done } = await db.from("sweeps").select("amount").eq("kind", "sweep").eq("status", "confirmed").limit(5e3);
       const swept_total = (done ?? []).reduce((s, r) => s + Number(r.amount), 0);
-      return json({ overview: data, hot: hot2, network, asset: await assetOf(db), sweeps: recentSweeps ?? [], swept_total });
+      const { data: ls } = await db.from("app_settings").select("value").eq("key", "last_scan_at").maybeSingle();
+      return json({ overview: data, hot: hot2, network, asset: await assetOf(db), sweeps: recentSweeps ?? [], swept_total, last_scan_at: ls?.value ?? null });
     }
     if (body.action === "pending" || body.action === "recent") {
       const pending = body.action === "pending";

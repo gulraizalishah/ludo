@@ -44,7 +44,8 @@ export async function tryPayout(db: DB, w: { id: string; amount: string; to_addr
     const { txid, signed } = asset === 'TRX'
       ? await buildSignedTrxTransfer(cfg, { fromPriv: h.priv, fromAddress: h.address, to: w.to_address, amountSun: toMicro(w.amount) })
       : await buildSignedTransfer(cfg, { fromPriv: h.priv, fromAddress: h.address, to: w.to_address, amountMicro: toMicro(w.amount) });
-    await db.rpc('set_withdrawal_tx', { p_id: w.id, p_tx: txid });                // saved BEFORE broadcasting
+    const saved = await db.rpc('set_withdrawal_tx', { p_id: w.id, p_tx: txid });  // saved BEFORE broadcasting
+    if (saved.error) throw new Error('Could not record the transaction id: ' + saved.error.message);
     stored = true;
     await broadcast(cfg, signed);                                                  // if this reply is lost, confirmProcessing finds the transaction by its id
     await setNote(db, w.id, null);

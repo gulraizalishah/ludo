@@ -67,3 +67,8 @@ TRX needs no fee top-ups when collecting deposits (a TRX transfer only uses free
 The stake buttons come from `stake_options`. All limits (`min_stake`, `min_deposit`, `min_withdrawal`, `auto_withdraw_*`, `sweep_min`) are in that currency.
 If you change `asset`, run `supabase/maintenance/clear_test_data.sql` first while testing: old balances are in the old currency.
 Collected TRX deposits leave about 1 TRX at each deposit address (to cover the fee if free bandwidth is used up).
+
+## Automatic deposits (the timer)
+Run `supabase/maintenance/schedule_deposit_scan.sql` once (after adding the `CRON_SECRET` secret and filling in its 3 placeholders).
+Every minute the server then credits new deposits and moves them into the payout wallet. `/admin.html` shows "Automatic deposit collecting: running".
+The Add funds window also checks by itself every 15 seconds while it is open.

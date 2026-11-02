@@ -25,7 +25,8 @@ Deno.serve(async (req) => {
       const { data: recentSweeps } = await db.from('sweeps').select('id,address,kind,status,amount,tx_hash,created_at').neq('kind', 'check').order('created_at', { ascending: false }).limit(8);
       const { data: done } = await db.from('sweeps').select('amount').eq('kind', 'sweep').eq('status', 'confirmed').limit(5000);
       const swept_total = (done ?? []).reduce((s: number, r: { amount: string }) => s + Number(r.amount), 0);
-      return json({ overview: data, hot, network, asset: await assetOf(db), sweeps: recentSweeps ?? [], swept_total });
+      const { data: ls } = await db.from('app_settings').select('value').eq('key', 'last_scan_at').maybeSingle();
+      return json({ overview: data, hot, network, asset: await assetOf(db), sweeps: recentSweeps ?? [], swept_total, last_scan_at: ls?.value ?? null });
     }
     if (body.action === 'pending' || body.action === 'recent') {
       const pending = body.action === 'pending';
