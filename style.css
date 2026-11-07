@@ -102,3 +102,24 @@ dialog .link { background: none; color: var(--mute); text-decoration: underline;
 .admin .bad { color: #ff8a80; font-weight: 700; } .admin .good { color: #6be28f; font-weight: 700; } .admin code { word-break: break-all; }
 .admin .actions { display: flex; gap: 6px; } .admin .actions button { padding: 6px 10px; border-radius: 10px; font-weight: 700; } .admin .ok { background: #2fa35b; } .admin .no { background: #8b2e2e; }
 .admin .box { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 14px; margin: 14px 0; overflow-x: auto; }
+
+/* login / sign-up page */
+.authpage { width: min(100%, 420px); display: grid; gap: 12px; padding: 18px 0; }
+.authpage h1 { margin: 0; } .back { color: var(--mute); text-decoration: none; }
+.tabs { display: flex; gap: 6px; background: var(--panel); border-radius: 14px; padding: 4px; }
+.tabs button { flex: 1; background: transparent; border-radius: 10px; padding: 9px; font-weight: 700; color: var(--mute); }
+.tabs button[aria-selected="true"] { background: #2f7de1; color: #fff; }
+.authpage section { display: grid; gap: 12px; }
+.authpage label, #limDlg label { display: grid; gap: 4px; color: var(--mute); font-size: .9rem; }
+.authpage input:not([type=checkbox]), #limDlg input:not([type=checkbox]) { font: inherit; padding: 11px 12px; border-radius: 10px; border: 1px solid var(--line); background: #0e1627; color: var(--ink); }
+label.check { display: flex !important; gap: 10px; align-items: flex-start; } label.check input { width: 18px; height: 18px; margin-top: 2px; flex: none; }
+.authpage a, #limDlg a { color: #8cc0ff; }
+.authpage .primary { background: #2f7de1; border-radius: 12px; padding: 12px; font-weight: 700; }
+.authpage .link { background: none; color: var(--mute); text-decoration: underline; padding: 2px; justify-self: start; }
+#msg { margin: 0; min-height: 1.3em; color: #ffb4a8; } #msg.good { color: #6be28f; } #captcha { min-height: 0; }
+.legal { margin-top: 18px; color: var(--mute); font-size: .85rem; } .legal a { color: var(--mute); }
+#limDlg .ex { flex: 1; background: #0e1627; border: 1px solid var(--line); border-radius: 12px; padding: 9px; font-weight: 700; }
+#limSet { background: #2fa35b; border-radius: 12px; padding: 9px 14px; font-weight: 700; } #limAcceptBtn { background: #2f7de1; border-radius: 12px; padding: 10px; font-weight: 700; }
+/* plain text pages (terms, privacy, responsible play) */
+.doc { width: min(100%, 720px); padding: 18px 0 40px; line-height: 1.55; } .doc h1 { margin-bottom: 4px; } .doc h2 { margin: 22px 0 4px; font-size: 1.15rem; }
+.doc p, .doc li { color: #cdd6e6; } .doc .tpl { background: #3a2f12; border: 1px solid #7a6420; color: #ffe8a3; border-radius: 12px; padding: 10px 12px; font-size: .9rem; } .doc a { color: #8cc0ff; }

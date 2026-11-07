@@ -72,3 +72,8 @@ Collected TRX deposits leave about 1 TRX at each deposit address (to cover the f
 Run `supabase/maintenance/schedule_deposit_scan.sql` once (after adding the `CRON_SECRET` secret and filling in its 3 placeholders).
 Every minute the server then credits new deposits and moves them into the payout wallet. `/admin.html` shows "Automatic deposit collecting: running".
 The Add funds window also checks by itself every 15 seconds while it is open.
+
+## Pages
+`index.html` the game and lobby, `login.html` log in / sign up / forgot and reset password, `admin.html` admin (two-step login required),
+`terms.html`, `privacy.html`, `responsible.html` (templates: fill in the brackets). See `LAUNCH_CHECKLIST.md` before real money.
+Run migrations 1 to 10 in order. Functions to deploy: lobby, game, wallet, admin, health.

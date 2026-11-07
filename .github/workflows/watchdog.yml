@@ -1,0 +1,25 @@
+# An outside watcher: every 30 minutes it asks your "health" function if the deposit timer is alive and the books balance.
+# If not, it sends you a Telegram message. This still works when your own timer is the thing that broke.
+# Repository secrets to add (Settings > Secrets and variables > Actions): HEALTH_URL, SUPABASE_ANON_KEY, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
+name: watchdog
+on:
+  schedule:
+    - cron: '*/30 * * * *'
+  workflow_dispatch:
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ask the health function
+        env:
+          HEALTH_URL: ${{ secrets.HEALTH_URL }}
+          ANON: ${{ secrets.SUPABASE_ANON_KEY }}
+          BOT: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          CHAT: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          body=$(curl -s -m 30 -H "apikey: $ANON" -H "Authorization: Bearer $ANON" "$HEALTH_URL" || true)
+          echo "$body"
+          if ! echo "$body" | grep -q '"ok":true'; then
+            curl -s -m 30 "https://api.telegram.org/bot$BOT/sendMessage" --data-urlencode "chat_id=$CHAT" --data-urlencode "text=ALERT: Ludo health check failed. Answer: $body"
+            exit 1
+          fi

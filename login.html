@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Log in or sign up · Ludo</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main class="authpage">
+  <a class="back" href="index.html">← Back to the game</a>
+  <h1>Ludo</h1>
+  <div class="tabs" role="tablist">
+    <button id="tabLogin" role="tab" aria-selected="true">Log in</button>
+    <button id="tabSignup" role="tab" aria-selected="false">Sign up</button>
+  </div>
+
+  <section id="loginForm">
+    <label>Email<input id="liEmail" type="email" autocomplete="email" inputmode="email"></label>
+    <label>Password<input id="liPw" type="password" autocomplete="current-password"></label>
+    <button id="liGo" class="primary">Log in</button>
+    <button id="forgot" class="link">Forgot your password?</button>
+  </section>
+
+  <section id="signupForm" hidden>
+    <label>Email<input id="suEmail" type="email" autocomplete="email" inputmode="email"></label>
+    <label>Username (optional)<input id="suName" autocomplete="username" maxlength="20" placeholder="3-20 letters, numbers or _"></label>
+    <label>Password<input id="suPw" type="password" autocomplete="new-password" placeholder="at least 8 characters"></label>
+    <label>Repeat the password<input id="suPw2" type="password" autocomplete="new-password"></label>
+    <label class="check"><input type="checkbox" id="suAge"> <span>I am 18 years old or older.</span></label>
+    <label class="check"><input type="checkbox" id="suTerms"> <span>I accept the <a href="terms.html" target="_blank">Terms</a> and the <a href="privacy.html" target="_blank">Privacy Policy</a>, and I have read <a href="responsible.html" target="_blank">Responsible play</a>.</span></label>
+    <button id="suGo" class="primary">Create my account</button>
+  </section>
+
+  <section id="forgotForm" hidden>
+    <p class="note">Enter your email and we will send you a link to choose a new password.</p>
+    <label>Email<input id="fgEmail" type="email" autocomplete="email" inputmode="email"></label>
+    <button id="fgGo" class="primary">Send the link</button>
+    <button id="fgBack" class="link">Back to log in</button>
+  </section>
+
+  <section id="resetForm" hidden>
+    <h2>Choose a new password</h2>
+    <label>New password<input id="rsPw" type="password" autocomplete="new-password" placeholder="at least 8 characters"></label>
+    <label>Repeat the password<input id="rsPw2" type="password" autocomplete="new-password"></label>
+    <button id="rsGo" class="primary">Save the new password</button>
+  </section>
+
+  <div id="captcha"></div>
+  <p id="msg" role="status"></p>
+  <footer class="legal"><a href="terms.html">Terms</a> · <a href="privacy.html">Privacy</a> · <a href="responsible.html">Responsible play</a></footer>
+</main>
+<script type="module" src="auth.js"></script>
+</body>
+</html>

@@ -14,6 +14,14 @@ async function userFrom(req) {
   const { data, error } = await admin().auth.getUser(token);
   return error || !data.user ? null : data.user;
 }
+var tokenOf = (req) => (req.headers.get("Authorization") ?? "").replace("Bearer ", "");
+function aalOf(token) {
+  try {
+    return JSON.parse(atob(token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/"))).aal ?? "";
+  } catch {
+    return "";
+  }
+}
 
 // ../../mnt/user-data/outputs/ludo/supabase/functions/_shared/tron.js
 import { HDKey } from "npm:@scure/bip32@1.5.0";
@@ -208,11 +216,24 @@ async function hotStatus() {
   }
 }
 
+// ../../mnt/user-data/outputs/ludo/supabase/functions/_shared/alerts.ts
+var env2 = (k) => Deno.env.get(k) || "";
+async function notify(text) {
+  const token = env2("TELEGRAM_BOT_TOKEN"), chat = env2("TELEGRAM_CHAT_ID");
+  if (!token || !chat) return false;
+  try {
+    const r = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ chat_id: chat, text }) });
+    return r.ok;
+  } catch {
+    return false;
+  }
+}
+
 // ../../mnt/user-data/outputs/ludo/supabase/functions/_shared/sweep.ts
-var env2 = (k, d) => Deno.env.get(k) || d;
-var MIN_USDT = () => Number(env2("SWEEP_MIN_USDT", "1"));
-var MIN_TRX = () => Number(env2("SWEEP_MIN_TRX", "15"));
-var TOPUP_TRX = () => Number(env2("SWEEP_TOPUP_TRX", "25"));
+var env3 = (k, d) => Deno.env.get(k) || d;
+var MIN_USDT = () => Number(env3("SWEEP_MIN_USDT", "1"));
+var MIN_TRX = () => Number(env3("SWEEP_MIN_TRX", "15"));
+var TOPUP_TRX = () => Number(env3("SWEEP_TOPUP_TRX", "25"));
 var HOT_KEEP_TRX = 30;
 var must = (r, what) => {
   if (r.error) throw new Error(`${what}: ${r.error.message}`);
@@ -303,6 +324,7 @@ Deno.serve(async (req) => {
     const db = admin();
     const { data: me } = await db.from("profiles").select("is_admin").eq("id", user.id).maybeSingle();
     if (!me?.is_admin) return json({ error: "Admins only." }, 403);
+    if (Deno.env.get("ADMIN_REQUIRE_MFA") !== "false" && aalOf(tokenOf(req)) !== "aal2") return json({ error: "Two-step login required.", code: "mfa" }, 403);
     const body = await req.json().catch(() => ({}));
     if (body.action === "overview") {
       await confirmProcessing(db).catch(() => 0);
@@ -375,6 +397,60 @@ Deno.serve(async (req) => {
       if (seen !== "success") return json({ error: "The network does not show this transaction as successful. Check the id (it is not the wallet address), or wait a minute after sending." }, 400);
       const { error } = await db.rpc("mark_withdrawal_sent", { p_id: w.id, p_tx: tx });
       return error ? json({ error: error.message }, 400) : json({ ok: true });
+    }
+    if (body.action === "test_alert") return json({ ok: await notify("Test alert from your Ludo admin page. If you can read this, alerts work.") });
+    if (body.action === "risk") {
+      const name = async (id) => {
+        const { data: u } = await db.auth.admin.getUserById(id);
+        const { data: p } = await db.from("profiles").select("username").eq("id", id).maybeSingle();
+        return p?.username || u?.user?.email || "?";
+      };
+      const { data: addr } = await db.from("admin_risk_addresses").select("*").limit(20);
+      const addresses = [];
+      for (const a of addr ?? []) {
+        const { data: ws } = await db.from("withdrawals").select("user_id").eq("to_address", a.to_address);
+        const ids = [...new Set((ws ?? []).map((w) => w.user_id))];
+        addresses.push({ ...a, users: await Promise.all(ids.map(name)) });
+      }
+      const { data: prs } = await db.from("admin_risk_pairs").select("*").limit(50);
+      const pairs = [];
+      for (const p of prs ?? []) {
+        const lopsided = Math.max(Number(p.wins_a), Number(p.wins_b)) / Number(p.matches) >= 0.8;
+        pairs.push({ ...p, a: await name(p.user_a), b: await name(p.user_b), lopsided });
+      }
+      return json({ addresses, pairs: pairs.sort((x, y) => Number(y.lopsided) - Number(x.lopsided) || Number(y.matches) - Number(x.matches)) });
+    }
+    if (body.action === "readiness") {
+      const checks = [];
+      const add = (name, ok, okHint, badHint, bad = "warn") => checks.push({ name, status: ok ? "ok" : bad, hint: ok ? okHint : badHint });
+      const set = async (k) => (await db.from("app_settings").select("value").eq("key", k).maybeSingle()).data?.value;
+      add("Real TRON network", !/nile|shasta/.test(chainCfg().api), "Using the real TRON network.", "Still on the TRON test network. Fine for testing, switch for launch.", "info");
+      const tm = await set("testing_mode");
+      add("Testing mode off", !(tm === true || tm === "true"), "The wipe script is locked.", "testing_mode is still on, so the wipe script could delete money records. Set it to false before launch.");
+      add("Secret seed set", /^[0-9a-f]{64}$/i.test(Deno.env.get("HD_SEED") ?? ""), "HD_SEED is set.", "The HD_SEED secret is missing.");
+      const ls = await set("last_scan_at"), age = ls ? (Date.now() - new Date(String(ls)).getTime()) / 1e3 : null;
+      add("Deposit timer running", age !== null && age < 180, "The timer ran in the last 3 minutes.", "The deposit timer is not running. Run schedule_deposit_scan.sql.");
+      const { data: ov } = await db.from("admin_overview").select("unaccounted,wallet_mismatches,pending_amount").maybeSingle();
+      add("Books balance", !!ov && Number(ov.unaccounted) === 0 && Number(ov.wallet_mismatches) === 0, "Every coin is accounted for.", "The books do not balance. Investigate before anything else.");
+      const hot2 = await hotStatus().catch(() => null);
+      const asset = await assetOf(db);
+      const have = hot2 ? asset === "TRX" ? hot2.trx : hot2.usdt : null;
+      add("Payout wallet funded", have != null && have > Number(ov?.pending_amount ?? 0), `Payout wallet holds ${have} ${asset}.`, "The payout wallet is empty or too low for the waiting withdrawals.");
+      try {
+        const s = await (await fetch(`${Deno.env.get("SUPABASE_URL")}/auth/v1/settings`, { headers: { apikey: Deno.env.get("SUPABASE_ANON_KEY") ?? "" } })).json();
+        add("Email confirmation required", s.mailer_autoconfirm === false, "New accounts must confirm their email.", "Email confirmation is OFF. Turn it on in Authentication > Sign In / Providers > Email.");
+      } catch {
+        checks.push({ name: "Email confirmation required", status: "info", hint: "Could not check. Look in Authentication > Sign In / Providers > Email." });
+      }
+      checks.push({ name: "Bot check (CAPTCHA)", status: "info", hint: "Cannot be checked from here. Enable it in Authentication > Attack Protection and add the site key to config.js." });
+      const [a, m, r] = [Number(await set("withdraw_min_age_hours")), Number(await set("withdraw_min_matches")), Number(await set("withdraw_wager_ratio"))];
+      add("Withdrawal safeguards on", a > 0 || m > 0 || r > 0, "At least one safeguard is active.", "All withdrawal safeguards are off (new-account wait, matches played, play-through). See LAUNCH_CHECKLIST.md.");
+      add("First withdrawal reviewed", await set("first_withdrawal_manual") === true, "The first withdrawal of each account waits for you.", "Not enabled. Recommended at launch.", "info");
+      add("Alerts connected", !!(Deno.env.get("TELEGRAM_BOT_TOKEN") && Deno.env.get("TELEGRAM_CHAT_ID")), 'Telegram is connected (use "Send test alert").', "Telegram is not set up, so you will not hear about problems.");
+      const bc = await set("blocked_countries");
+      add("Blocked countries", Array.isArray(bc) && bc.length > 0, `Blocking: ${bc?.join(", ")}.`, "No countries are blocked.", "info");
+      checks.push({ name: "Admin two-step login", status: "ok", hint: "You are logged in with a code, and the server insists on it." });
+      return json({ checks });
     }
     if (body.action === "sweep_now") {
       return json({ ok: true, summary: await sweepAll(db, 20) });

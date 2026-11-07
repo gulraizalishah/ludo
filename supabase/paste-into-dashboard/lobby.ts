@@ -14,6 +14,17 @@ async function userFrom(req) {
   const { data, error } = await admin().auth.getUser(token);
   return error || !data.user ? null : data.user;
 }
+var countryOf = (req) => (req.headers.get("cf-ipcountry") ?? "").toUpperCase();
+async function geoBlocked(db, req) {
+  const { data } = await db.from("app_settings").select("key,value").in("key", ["blocked_countries", "geo_strict"]);
+  const s = {};
+  for (const r of data ?? []) s[r.key] = r.value;
+  const blocked = Array.isArray(s.blocked_countries) ? s.blocked_countries.map((c2) => String(c2).toUpperCase()) : [];
+  const c = countryOf(req);
+  if (c && blocked.includes(c)) return "This service is not available in your country.";
+  if (!c && s.geo_strict === true) return "We could not determine your country, so this action is not available.";
+  return null;
+}
 
 // ../../mnt/user-data/outputs/ludo/supabase/functions/_shared/engine.js
 var createGame = (colors) => ({
@@ -44,6 +55,8 @@ Deno.serve(async (req) => {
       return error2 ? json({ error: error2.message }, 400) : json({ ok: true });
     }
     if (action !== "join") return json({ error: "bad action" }, 400);
+    const blocked = await geoBlocked(db, req);
+    if (blocked) return json({ error: blocked }, 403);
     if (![2, 4].includes(players) || !(Number(stake) > 0)) return json({ error: "bad request" }, 400);
     const { data, error } = await db.rpc("quick_match", { p_user: user.id, p_stake: stake, p_players: players });
     if (error) return json({ error: error.message }, 400);

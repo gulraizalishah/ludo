@@ -3,6 +3,8 @@
 // TRON_API and USDT_CONTRACT (optional: default to the Nile TEST network and its test USDT).
 import { admin, cors, json, userFrom } from '../_shared/util.ts';
 import { deriveAddress, parseDeposits, parseTrxDeposits, isValidTronAddress } from '../_shared/tron.js';
+import { geoBlocked } from '../_shared/util.ts';
+import { runAlerts } from '../_shared/alerts.ts';
 import { setting, tryPayout, confirmProcessing, setNote, assetOf, hot } from '../_shared/payout.ts';
 import { sweepAll, sweepAddress } from '../_shared/sweep.ts';
 import type { PayoutResult } from '../_shared/payout.ts';
@@ -31,8 +33,9 @@ Deno.serve(async (req) => {
       }
       const confirmed = await confirmProcessing(db);               // also settles withdrawals that were being sent
       const swept = await sweepAll(db, 10).catch((e) => ({ error: String(e) }));   // and collects deposits into the payout wallet
+      const alerts = await runAlerts(db).catch((e) => { console.error('alerts', String(e)); return []; });
       await db.from('app_settings').upsert({ key: 'last_scan_at', value: new Date().toISOString() }, { onConflict: 'key' });   // lets the admin page show that the timer is alive
-      return json({ ok: true, scanned: data?.length ?? 0, credited, confirmed, swept });
+      return json({ ok: true, scanned: data?.length ?? 0, credited, confirmed, swept, alerts });
     }
 
     const user = await userFrom(req);
@@ -50,11 +53,26 @@ Deno.serve(async (req) => {
       const since = new Date(Date.now() - 24 * 3600_000).toISOString();
       const { data: recent } = await db.from('withdrawals').select('amount').eq('user_id', user.id).neq('status', 'rejected').gte('created_at', since);
       const day = (recent ?? []).reduce((s: number, r: { amount: string }) => s + Number(r.amount), 0);   // includes this one
-      let result: PayoutResult & { reason?: string } = { status: 'queued', reason: 'limit' };
-      if (amount <= max && day <= dailyMax && env('HD_SEED')) result = await tryPayout(db, { id: data, amount: amount.toFixed(6), to_address: to });
+      const { data: fm } = await db.from('app_settings').select('value').eq('key', 'first_withdrawal_manual').maybeSingle();
+      const { count: sentBefore } = await db.from('withdrawals').select('id', { count: 'exact', head: true }).eq('user_id', user.id).eq('status', 'sent');
+      const review = fm?.value === true && !(sentBefore && sentBefore > 0);          // the first payout of every account is checked by hand
+      let result: PayoutResult & { reason?: string } = { status: 'queued', reason: review ? 'review' : 'limit' };
+      if (review) await setNote(db, data, 'First withdrawal of this account: needs your approval.');
+      else if (amount <= max && day <= dailyMax && env('HD_SEED')) result = await tryPayout(db, { id: data, amount: amount.toFixed(6), to_address: to });
       else await setNote(db, data, !env('HD_SEED') ? 'Automatic payouts are not set up (the HD_SEED secret is missing).' : amount > max ? `Over the automatic limit of ${max} USDT per withdrawal.` : `This player passed the automatic limit of ${dailyMax} USDT in 24 hours.`);
       return json({ ok: true, id: data, status: result.status, reason: result.reason });
     }
+    if (['limits_get', 'limits_set', 'exclude', 'accept_terms'].includes(action)) {      // the player's own safety controls
+      const fail = (m: string) => json({ error: m }, 400);
+      if (action === 'accept_terms') { const { error } = await db.rpc('accept_terms', { p_user: user.id }); if (error) return fail(error.message); }
+      if (action === 'limits_set') { const lim = body.limit === null || body.limit === '' ? null : Number(body.limit); if (lim !== null && !(lim > 0)) return fail('Enter an amount above zero.'); const { error } = await db.rpc('set_stake_limit', { p_user: user.id, p_limit: lim }); if (error) return fail(error.message); }
+      if (action === 'exclude') { const { error } = await db.rpc('self_exclude', { p_user: user.id, p_days: Number(body.days) }); if (error) return fail(error.message); }
+      const { data: p } = await db.from('profiles').select('age_confirmed_at,terms_accepted_at,limit_stake_daily,limit_pending,limit_pending_at,excluded_until').eq('id', user.id).maybeSingle();
+      const { data: staked } = await db.from('match_players').select('stake_locked').eq('user_id', user.id).gte('joined_at', new Date(Date.now() - 24 * 3600_000).toISOString());
+      return json({ ok: true, accepted: !!(p?.age_confirmed_at && p?.terms_accepted_at), limit: p?.limit_stake_daily ?? null, pending: p?.limit_pending ?? null, pending_at: p?.limit_pending_at ?? null,
+        excluded_until: p?.excluded_until ?? null, staked_24h: (staked ?? []).reduce((s: number, r: { stake_locked: string }) => s + Number(r.stake_locked), 0) });
+    }
+    if (action === 'address' || action === 'check') { const g = await geoBlocked(db, req); if (g) return json({ error: g }, 403); }   // deposits are not available from blocked countries
     if (action === 'check') await confirmProcessing(db);          // settle payouts first, whatever else happens
     const address = await addressFor(db, user.id);
     if (action === 'address') return json({ address, network: NETWORK(), contract: USDT(), asset: await assetOf(db), min: (await setting(db, 'min_deposit')) || 1 });

@@ -32,7 +32,7 @@
         <button data-p="2" aria-pressed="true">2 players</button><button data-p="4" aria-pressed="false">4 players</button>
       </div>
       <p id="prize"></p>
-      <div class="row"><button id="addFunds" class="link">Add funds (<span class="asset">USDT</span>)</button><button id="withdraw" class="link">Withdraw</button></div>
+      <div class="row"><button id="limitsBtn" class="link">My limits</button><button id="addFunds" class="link">Add funds (<span class="asset">USDT</span>)</button><button id="withdraw" class="link">Withdraw</button></div>
       <button id="findMatch" class="go">Find match</button>
       <button id="resumeMatch" class="go" hidden>Resume your match</button>
       <p id="moneyMsg" role="status"></p>
@@ -46,6 +46,7 @@
         <li><b>Home lane:</b> locked 🔒 until you capture an opponent piece. Until then your pieces keep circling.</li>
       </ul>
     </details>
+    <footer class="legal"><a href="terms.html">Terms</a> · <a href="privacy.html">Privacy</a> · <a href="responsible.html">Responsible play</a></footer>
   </section>
   <section id="game" hidden>
     <div class="bar"><div id="chips"></div><span id="timer"></span><button id="menu">Menu</button></div>
@@ -63,18 +64,6 @@
     </div>
   </section>
 </main>
-<dialog id="authDlg">
-  <div class="card">
-    <h2 id="authTitle">Log in</h2>
-    <label>Email<input id="em" type="email" autocomplete="email"></label>
-    <label>Password<input id="pw" type="password" autocomplete="current-password"></label>
-    <label id="unameRow" hidden>Username (optional)<input id="un" maxlength="20" autocomplete="username"></label>
-    <p id="authMsg" role="status"></p>
-    <button id="authGo">Log in</button>
-    <button id="authSwap" class="link">New here? Sign up</button>
-    <button id="authClose" class="link">Close</button>
-  </div>
-</dialog>
 <script type="module" src="app.js"></script>
 <dialog id="waitDlg">
   <div class="card">
@@ -98,6 +87,28 @@
   </div>
 </dialog>
 <script type="module" src="online.js"></script>
+<dialog id="limDlg">
+  <div class="card">
+    <h2>Responsible play</h2>
+    <div id="limAccept" hidden>
+      <p class="note">Before you play for money, please confirm:</p>
+      <label class="check"><input type="checkbox" id="limAge"> <span>I am 18 years old or older.</span></label>
+      <label class="check"><input type="checkbox" id="limTerms"> <span>I accept the <a href="terms.html" target="_blank">Terms</a>.</span></label>
+      <button id="limAcceptBtn">Confirm</button>
+    </div>
+    <p id="limCur" style="margin:0"></p>
+    <p id="limUsed" class="note"></p>
+    <label>Daily stake limit (<span class="asset">USDT</span>)<input id="limVal" inputmode="decimal" autocomplete="off"></label>
+    <div class="row"><button id="limSet">Set limit</button><button id="limRemove" class="link">Remove limit</button></div>
+    <p class="note">Lowering a limit works at once. Raising or removing it takes 24 hours.</p>
+    <h3 style="margin:6px 0 0">Take a break</h3>
+    <div class="row"><button class="ex" data-d="1">1 day</button><button class="ex" data-d="7">7 days</button><button class="ex" data-d="30">30 days</button></div>
+    <p class="note">While paused you cannot start new matches. You can still withdraw your money.</p>
+    <p id="limMsg" role="status" style="margin:0;color:var(--mute)"></p>
+    <a href="responsible.html" target="_blank" style="color:var(--mute)">Help and advice</a>
+    <button id="limClose" class="link">Close</button>
+  </div>
+</dialog>
 <dialog id="wdDlg">
   <div class="card">
     <h2>Withdraw <span class="asset">USDT</span></h2>
@@ -113,5 +124,6 @@
 </dialog>
 <script type="module" src="deposit.js"></script>
 <script type="module" src="withdraw.js"></script>
+<script type="module" src="limits.js"></script>
 </body>
 </html>

@@ -17,6 +17,15 @@
   </div>
   <p id="msg" role="status" style="color:#ffb4a8">Loading…</p>
   <div id="denied" class="box" hidden><h3 style="margin-top:0">This account is not an admin</h3><p style="color:var(--mute)">You are logged in, but this account has no admin rights.</p><button id="logout2" style="background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:8px 14px">Log out</button></div>
+  <div id="mfaBox" class="box" hidden>
+    <h3 style="margin-top:0">Two-step login</h3>
+    <p id="mfaText" style="color:var(--mute)"></p>
+    <img id="mfaQr" alt="QR code for your authenticator app" hidden style="background:#fff;padding:8px;border-radius:12px;width:200px;height:200px">
+    <p><code id="mfaSecret" hidden></code></p>
+    <label style="display:grid;gap:4px;color:var(--mute)">6-digit code<input id="mfaCode" inputmode="numeric" maxlength="6" autocomplete="one-time-code" style="font:inherit;padding:10px;border-radius:10px;border:1px solid var(--line);background:#0e1627;color:var(--ink);width:10em"></label>
+    <button id="mfaGo" style="margin-top:10px;background:#2f7de1;border-radius:12px;padding:10px 16px;font-weight:700">Confirm</button>
+    <button id="mfaOut" style="margin-top:10px;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:10px 16px">Log out</button>
+  </div>
   <div id="panel" hidden>
     <div class="box"><h3 style="margin-top:0">Money overview (in <span class="asset">USDT</span>)</h3><table id="ov"></table></div>
     <div class="box"><h3 style="margin-top:0">Payout wallet (pays withdrawals automatically)</h3><table id="hot"></table>
@@ -28,6 +37,9 @@
     <div class="box"><h3 style="margin-top:0">Your earnings</h3><p id="earn"></p>
       <button id="takeBtn" style="background:#2fa35b;border-radius:12px;padding:10px 16px;font-weight:700">Move earnings to my balance</button>
       <p style="color:var(--mute);font-size:.85rem">Then open the game with this same account and press Withdraw to send it to your wallet.</p></div>
+    <div class="box"><h3 style="margin-top:0">Launch readiness</h3><table id="ready"></table>
+      <button id="alertBtn" style="margin-top:8px;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:8px 14px;font-weight:700">Send test alert</button></div>
+    <div class="box"><h3 style="margin-top:0">Risk watch</h3><div id="risk"></div></div>
     <div class="box"><h3 style="margin-top:0">Withdrawals waiting</h3><div id="pending"></div></div>
     <div class="box"><h3 style="margin-top:0">Recently processed</h3><div id="recent"></div></div>
     <div class="box"><h3 style="margin-top:0">Transaction history</h3>

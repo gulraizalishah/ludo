@@ -7,44 +7,9 @@ const $ = (id) => document.getElementById(id);
 const configured = SUPABASE_URL.startsWith('https://');
 export const sb = configured ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 const fmt = (n) => Number(n).toFixed(2);
-const friendly = (m) => (/load failed|failed to fetch|network|fetch/i.test(m)
-  ? "Can't reach the server. If your Supabase project was idle for a while it may be paused: open the Supabase dashboard and press Restore." : m);
-const msg = (t) => { $('authMsg').textContent = friendly(t); };
-let mode = 'login', channel = null, currentId = null;
+let channel = null, currentId = null;
 
-function setMode(m) {
-  mode = m;
-  $('authTitle').textContent = m === 'login' ? 'Log in' : 'Create account';
-  $('authGo').textContent = m === 'login' ? 'Log in' : 'Sign up';
-  $('authSwap').textContent = m === 'login' ? 'New here? Sign up' : 'Have an account? Log in';
-  $('unameRow').hidden = m === 'login';
-  $('pw').autocomplete = m === 'login' ? 'current-password' : 'new-password';
-  msg('');
-}
-$('login').onclick = () => { setMode('login'); $('authDlg').showModal(); };
-$('authClose').onclick = () => $('authDlg').close();
-$('authSwap').onclick = () => setMode(mode === 'login' ? 'signup' : 'login');
-['em', 'pw', 'un'].forEach((id) => $(id).addEventListener('keydown', (e) => { if (e.key === 'Enter') $('authGo').click(); }));
-
-$('authGo').onclick = async () => {
-  if (!sb) return msg('Supabase is not connected yet: fill in config.js.');
-  const email = $('em').value.trim(), password = $('pw').value;
-  if (!email || password.length < 8) return msg('Enter an email and a password of at least 8 characters.');
-  msg('Working…');
-  if (mode === 'signup') {
-    const un = $('un').value.trim();
-    if (un && !/^[A-Za-z0-9_]{3,20}$/.test(un)) return msg('Username: 3-20 letters, numbers or underscore.');
-    if (un) localStorage.setItem('pendingName', un);
-    let r; try { r = await sb.auth.signUp({ email, password }); } catch (e) { return msg(e.message); }
-    const { data, error } = r;
-    if (error) return msg(error.message);
-    if (!data.session) return msg('Check your email to confirm your account, then log in.');
-  } else {
-    let r; try { r = await sb.auth.signInWithPassword({ email, password }); } catch (e) { return msg(e.message); }
-    if (r.error) return msg(r.error.message);
-  }
-  $('pw').value = ''; $('authDlg').close();
-};
+$('login').onclick = () => { location.href = 'login.html'; };       // log in / sign up now live on their own page
 $('logout').onclick = () => sb.auth.signOut();
 
 async function refresh(id) {

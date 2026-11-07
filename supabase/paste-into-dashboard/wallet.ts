@@ -14,6 +14,17 @@ async function userFrom(req) {
   const { data, error } = await admin().auth.getUser(token);
   return error || !data.user ? null : data.user;
 }
+var countryOf = (req) => (req.headers.get("cf-ipcountry") ?? "").toUpperCase();
+async function geoBlocked(db, req) {
+  const { data } = await db.from("app_settings").select("key,value").in("key", ["blocked_countries", "geo_strict"]);
+  const s = {};
+  for (const r of data ?? []) s[r.key] = r.value;
+  const blocked = Array.isArray(s.blocked_countries) ? s.blocked_countries.map((c2) => String(c2).toUpperCase()) : [];
+  const c = countryOf(req);
+  if (c && blocked.includes(c)) return "This service is not available in your country.";
+  if (!c && s.geo_strict === true) return "We could not determine your country, so this action is not available.";
+  return null;
+}
 
 // ../../mnt/user-data/outputs/ludo/supabase/functions/_shared/tron.js
 import { HDKey } from "npm:@scure/bip32@1.5.0";
@@ -247,12 +258,63 @@ async function confirmProcessing(db) {
   }
   return done;
 }
+async function hotStatus() {
+  const cfg = chainCfg(), h = hot();
+  try {
+    const b = await balancesOf(cfg, h.address);
+    return { address: h.address, trx: b.trx, usdt: b.usdt };
+  } catch (e) {
+    return { address: h.address, trx: null, usdt: null, error: String(e) };
+  }
+}
+
+// ../../mnt/user-data/outputs/ludo/supabase/functions/_shared/alerts.ts
+var env2 = (k) => Deno.env.get(k) || "";
+async function notify(text) {
+  const token = env2("TELEGRAM_BOT_TOKEN"), chat = env2("TELEGRAM_CHAT_ID");
+  if (!token || !chat) return false;
+  try {
+    const r = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ chat_id: chat, text }) });
+    return r.ok;
+  } catch {
+    return false;
+  }
+}
+async function once(db, topic, text, hours) {
+  const key = "alert_" + topic;
+  const { data } = await db.from("app_settings").select("value").eq("key", key).maybeSingle();
+  if (data?.value && Date.now() - new Date(String(data.value)).getTime() < hours * 36e5) return false;
+  if (!await notify(text)) return false;
+  await db.from("app_settings").upsert({ key, value: (/* @__PURE__ */ new Date()).toISOString() }, { onConflict: "key" });
+  return true;
+}
+async function runAlerts(db) {
+  const sent = [];
+  const { data: ov } = await db.from("admin_overview").select("*").maybeSingle();
+  if (ov && (Number(ov.unaccounted) !== 0 || Number(ov.wallet_mismatches) !== 0)) {
+    if (await once(db, "books", `ALERT: the books do not balance (unaccounted ${ov.unaccounted}, wallet mismatches ${ov.wallet_mismatches}). Open the admin page now.`, 3)) sent.push("books");
+  }
+  const asset = await assetOf(db), hot2 = await hotStatus(), min = await setting(db, "alert_hot_min") || 0, pending = Number(ov?.pending_amount ?? 0);
+  const bal = asset === "TRX" ? hot2.trx : hot2.usdt;
+  if (bal != null && bal < min + pending) {
+    if (await once(db, "hot", `Payout wallet is low: ${Number(bal).toFixed(2)} ${asset} (withdrawals waiting: ${pending}). Top it up so payouts keep going.`, 6)) sent.push("hot");
+  }
+  const { data: old } = await db.from("withdrawals").select("id").eq("status", "pending").lt("created_at", new Date(Date.now() - 30 * 6e4).toISOString()).limit(1);
+  if ((old ?? []).length && await once(db, "waiting", "A withdrawal has been waiting for your approval for over 30 minutes. Open the admin page.", 6)) sent.push("waiting");
+  const { data: failed } = await db.from("sweeps").select("id").eq("status", "failed").gte("created_at", new Date(Date.now() - 36e5).toISOString()).limit(5);
+  if ((failed ?? []).length >= 3 && await once(db, "sweeps", "Collecting deposits keeps failing (3+ failures in the last hour). Open the admin page.", 6)) sent.push("sweeps");
+  if ((/* @__PURE__ */ new Date()).getUTCHours() === 6 && ov) {
+    const text = `Daily summary: books ${Number(ov.unaccounted) === 0 && Number(ov.wallet_mismatches) === 0 ? "balance" : "DO NOT BALANCE"}. Deposited in total ${Number(ov.deposits_total).toFixed(2)} ${asset}, paid out ${Number(ov.paid_out_total).toFixed(2)}, your fees ${Number(ov.platform_fees).toFixed(2)}, matches running ${ov.active_matches}, withdrawals waiting ${ov.pending_count}.`;
+    if (await once(db, "daily", text, 20)) sent.push("daily");
+  }
+  return sent;
+}
 
 // ../../mnt/user-data/outputs/ludo/supabase/functions/_shared/sweep.ts
-var env2 = (k, d) => Deno.env.get(k) || d;
-var MIN_USDT = () => Number(env2("SWEEP_MIN_USDT", "1"));
-var MIN_TRX = () => Number(env2("SWEEP_MIN_TRX", "15"));
-var TOPUP_TRX = () => Number(env2("SWEEP_TOPUP_TRX", "25"));
+var env3 = (k, d) => Deno.env.get(k) || d;
+var MIN_USDT = () => Number(env3("SWEEP_MIN_USDT", "1"));
+var MIN_TRX = () => Number(env3("SWEEP_MIN_TRX", "15"));
+var TOPUP_TRX = () => Number(env3("SWEEP_TOPUP_TRX", "25"));
 var HOT_KEEP_TRX = 30;
 var must = (r, what) => {
   if (r.error) throw new Error(`${what}: ${r.error.message}`);
@@ -335,9 +397,9 @@ async function sweepAll(db, limit = 10) {
 }
 
 // ../../mnt/user-data/outputs/ludo/supabase/functions/wallet/index.ts
-var env3 = (k, d = "") => Deno.env.get(k) || d;
-var API = () => env3("TRON_API", "https://nile.trongrid.io");
-var USDT = () => env3("USDT_CONTRACT", "TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf");
+var env4 = (k, d = "") => Deno.env.get(k) || d;
+var API = () => env4("TRON_API", "https://nile.trongrid.io");
+var USDT = () => env4("USDT_CONTRACT", "TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf");
 var NETWORK = () => API().includes("nile") ? "nile" : API().includes("shasta") ? "shasta" : "mainnet";
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
@@ -346,7 +408,7 @@ Deno.serve(async (req) => {
     const { action } = body;
     const db = admin();
     if (action === "scan_all") {
-      const secret = env3("CRON_SECRET");
+      const secret = env4("CRON_SECRET");
       if (!secret || req.headers.get("x-cron-secret") !== secret) return json({ error: "forbidden" }, 403);
       const { data } = await db.from("deposit_addresses").select("user_id,address").not("address", "like", "pending-%").limit(100);
       let credited = 0;
@@ -360,8 +422,12 @@ Deno.serve(async (req) => {
       }
       const confirmed = await confirmProcessing(db);
       const swept = await sweepAll(db, 10).catch((e) => ({ error: String(e) }));
+      const alerts = await runAlerts(db).catch((e) => {
+        console.error("alerts", String(e));
+        return [];
+      });
       await db.from("app_settings").upsert({ key: "last_scan_at", value: (/* @__PURE__ */ new Date()).toISOString() }, { onConflict: "key" });
-      return json({ ok: true, scanned: data?.length ?? 0, credited, confirmed, swept });
+      return json({ ok: true, scanned: data?.length ?? 0, credited, confirmed, swept, alerts });
     }
     const user = await userFrom(req);
     if (!user) return json({ error: "Please log in first." }, 401);
@@ -377,10 +443,46 @@ Deno.serve(async (req) => {
       const since = new Date(Date.now() - 24 * 36e5).toISOString();
       const { data: recent } = await db.from("withdrawals").select("amount").eq("user_id", user.id).neq("status", "rejected").gte("created_at", since);
       const day = (recent ?? []).reduce((s, r) => s + Number(r.amount), 0);
-      let result = { status: "queued", reason: "limit" };
-      if (amount <= max && day <= dailyMax && env3("HD_SEED")) result = await tryPayout(db, { id: data, amount: amount.toFixed(6), to_address: to });
-      else await setNote(db, data, !env3("HD_SEED") ? "Automatic payouts are not set up (the HD_SEED secret is missing)." : amount > max ? `Over the automatic limit of ${max} USDT per withdrawal.` : `This player passed the automatic limit of ${dailyMax} USDT in 24 hours.`);
+      const { data: fm } = await db.from("app_settings").select("value").eq("key", "first_withdrawal_manual").maybeSingle();
+      const { count: sentBefore } = await db.from("withdrawals").select("id", { count: "exact", head: true }).eq("user_id", user.id).eq("status", "sent");
+      const review = fm?.value === true && !(sentBefore && sentBefore > 0);
+      let result = { status: "queued", reason: review ? "review" : "limit" };
+      if (review) await setNote(db, data, "First withdrawal of this account: needs your approval.");
+      else if (amount <= max && day <= dailyMax && env4("HD_SEED")) result = await tryPayout(db, { id: data, amount: amount.toFixed(6), to_address: to });
+      else await setNote(db, data, !env4("HD_SEED") ? "Automatic payouts are not set up (the HD_SEED secret is missing)." : amount > max ? `Over the automatic limit of ${max} USDT per withdrawal.` : `This player passed the automatic limit of ${dailyMax} USDT in 24 hours.`);
       return json({ ok: true, id: data, status: result.status, reason: result.reason });
+    }
+    if (["limits_get", "limits_set", "exclude", "accept_terms"].includes(action)) {
+      const fail = (m) => json({ error: m }, 400);
+      if (action === "accept_terms") {
+        const { error } = await db.rpc("accept_terms", { p_user: user.id });
+        if (error) return fail(error.message);
+      }
+      if (action === "limits_set") {
+        const lim = body.limit === null || body.limit === "" ? null : Number(body.limit);
+        if (lim !== null && !(lim > 0)) return fail("Enter an amount above zero.");
+        const { error } = await db.rpc("set_stake_limit", { p_user: user.id, p_limit: lim });
+        if (error) return fail(error.message);
+      }
+      if (action === "exclude") {
+        const { error } = await db.rpc("self_exclude", { p_user: user.id, p_days: Number(body.days) });
+        if (error) return fail(error.message);
+      }
+      const { data: p } = await db.from("profiles").select("age_confirmed_at,terms_accepted_at,limit_stake_daily,limit_pending,limit_pending_at,excluded_until").eq("id", user.id).maybeSingle();
+      const { data: staked } = await db.from("match_players").select("stake_locked").eq("user_id", user.id).gte("joined_at", new Date(Date.now() - 24 * 36e5).toISOString());
+      return json({
+        ok: true,
+        accepted: !!(p?.age_confirmed_at && p?.terms_accepted_at),
+        limit: p?.limit_stake_daily ?? null,
+        pending: p?.limit_pending ?? null,
+        pending_at: p?.limit_pending_at ?? null,
+        excluded_until: p?.excluded_until ?? null,
+        staked_24h: (staked ?? []).reduce((s, r) => s + Number(r.stake_locked), 0)
+      });
+    }
+    if (action === "address" || action === "check") {
+      const g = await geoBlocked(db, req);
+      if (g) return json({ error: g }, 403);
     }
     if (action === "check") await confirmProcessing(db);
     const address = await addressFor(db, user.id);
@@ -416,7 +518,7 @@ async function addressFor(db, uid) {
       index = again.data.derivation_index;
     } else index = ins.data.derivation_index;
   }
-  const address = deriveAddress(env3("HD_SEED"), index);
+  const address = deriveAddress(env4("HD_SEED"), index);
   await db.from("deposit_addresses").update({ address }).eq("user_id", uid);
   return address;
 }
@@ -424,7 +526,7 @@ async function scan(db, uid, address) {
   const asset = await assetOf(db), min = await setting(db, "min_deposit") || 1;
   const url = asset === "TRX" ? `${API()}/v1/accounts/${address}/transactions?only_confirmed=true&only_to=true&limit=200` : `${API()}/v1/accounts/${address}/transactions/trc20?only_confirmed=true&only_to=true&limit=200&contract_address=${USDT()}`;
   const headers = {};
-  if (env3("TRONGRID_API_KEY")) headers["TRON-PRO-API-KEY"] = env3("TRONGRID_API_KEY");
+  if (env4("TRONGRID_API_KEY")) headers["TRON-PRO-API-KEY"] = env4("TRONGRID_API_KEY");
   const res = await fetch(url, { headers });
   if (!res.ok) throw new Error(`TronGrid answered ${res.status}`);
   const found = asset === "TRX" ? parseTrxDeposits(await res.json(), address, min, hot().address) : parseDeposits(await res.json(), address, USDT(), min);

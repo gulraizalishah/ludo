@@ -13,8 +13,8 @@ async function api(body) {
     method: 'POST', body: JSON.stringify(body),
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}`, apikey: SUPABASE_ANON_KEY },
   });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok || data.error) throw new Error(data.error || `Server error ${res.status}`);
+  const data = (await res.json().catch(() => ({}))) ?? {};
+  if (!res.ok || data.error) { const err = new Error(data.error || `Server error ${res.status}`); err.code = data.code; throw err; }
   return data;
 }
 $('go').onclick = async () => {
@@ -31,13 +31,15 @@ sb.auth.onAuthStateChange((_e, s) => { token = s?.access_token ?? null; setTimeo
 async function show() {
   if (!token) { verified = false; $('panel').hidden = true; $('denied').hidden = true; $('loginBox').hidden = false; msg(''); return; }
   $('loginBox').hidden = true;
-  if (!verified) { $('panel').hidden = true; $('denied').hidden = true; msg('Checking your access…'); }
+  if (!verified) { $('panel').hidden = true; $('denied').hidden = true; $('mfaBox').hidden = true; msg('Checking your access…'); }
   try {
     const first = !verified;
     await overview();                                            // first: it tells us the currency
-    await Promise.all([lists(), history()]);
-    verified = true; $('panel').hidden = false; if (first) msg('');   // keep the result message of the button you just pressed
+    const soft = (name) => (e) => { console.error(name, e); };   // a failing side panel must not hide the rest of the page
+    await Promise.all([lists(), history(), readiness().catch(soft('readiness')), risk().catch(soft('risk'))]);
+    verified = true; $('panel').hidden = false; $('mfaBox').hidden = true; if (first) msg('');   // keep the result message of the button you just pressed
   } catch (e) {
+    if (e.code === 'mfa') { await mfaFlow(); return; }
     if (e.message === 'Admins only.') { $('panel').hidden = true; $('denied').hidden = false; msg(''); }
     else { msg(e.message); if (verified) window.scrollTo(0, 0); }
   }
@@ -82,7 +84,7 @@ $('takeBtn').onclick = async () => {
   try { await api({ action: 'move_earnings', amount: Number(a) }); msg('Moved. Now press Withdraw in the game.'); show(); } catch (e) { msg(e.message); }
 };
 async function lists() {
-  const [{ rows: p }, { rows: r }] = await Promise.all([api({ action: 'pending' }), api({ action: 'recent' })]);
+  const [{ rows: p = [] }, { rows: r = [] }] = await Promise.all([api({ action: 'pending' }), api({ action: 'recent' })]);
   $('pending').replaceChildren(...(p.length ? p.map(pendingRow) : [el('p', 'Nothing waiting.')]));
   $('recent').replaceChildren(...(r.length ? r.map((w) => el('p', `${Number(w.amount).toFixed(2)} ${asset} to ${w.to_address} · ${w.status}${w.tx_hash ? ' · ' + w.tx_hash.slice(0, 12) + '…' : ''} · ${w.email}`)) : [el('p', 'Nothing yet.')]));
 }
@@ -105,7 +107,7 @@ function pendingRow(w) {
 }
 
 async function history() {
-  const { rows } = await api({ action: 'transactions', filter: $('filter').value });
+  const { rows = [] } = await api({ action: 'transactions', filter: $('filter').value });
   const f = (n) => (Number(n) > 0 ? '+' : '') + Number(n).toFixed(2);
   const head = el('tr'); ['Time', 'Who', 'What', 'Available', 'Locked', 'Details'].forEach((t) => head.append(el('th', t)));
   const body = rows.map((r) => {
@@ -121,3 +123,47 @@ async function history() {
   $('tx').replaceChildren(head, ...(body.length ? body : [(() => { const tr = el('tr'); tr.append(el('td', 'Nothing yet.')); return tr; })()]));
 }
 $('filter').onchange = () => history().catch((e) => msg(e.message));
+
+// ---- two-step login: scan a QR code once, then type the 6-digit code at every login
+let factorId = null;
+async function mfaFlow() {
+  if (!$('mfaBox').hidden && factorId) return;               // already waiting for the code: do not start over
+  $('panel').hidden = true; $('mfaBox').hidden = false; msg('');
+  const { data: f, error } = await sb.auth.mfa.listFactors();
+  if (error) return msg(error.message);
+  const have = (f?.totp ?? [])[0];
+  if (have) {
+    factorId = have.id; $('mfaQr').hidden = true; $('mfaSecret').hidden = true;
+    $('mfaText').textContent = 'Open your authenticator app and type the 6-digit code for this account.';
+    return;
+  }
+  for (const x of f?.all ?? []) if (x.status === 'unverified') await sb.auth.mfa.unenroll({ factorId: x.id });   // clean up an unfinished attempt
+  const { data, error: e2 } = await sb.auth.mfa.enroll({ factorType: 'totp', friendlyName: 'Admin ' + Date.now() });
+  if (e2) return msg(e2.message + ' (Is two-step login switched on in Supabase: Authentication > Sign In / Providers > Multi-Factor?)');
+  factorId = data.id; $('mfaQr').src = data.totp.qr_code; $('mfaQr').hidden = false;
+  $('mfaSecret').textContent = data.totp.secret; $('mfaSecret').hidden = false;
+  $('mfaText').textContent = 'First time only: scan this QR code with an authenticator app (Google Authenticator, Authy, Microsoft Authenticator), or type the secret in by hand. Then type the 6-digit code the app shows.';
+}
+$('mfaGo').onclick = async () => {
+  const code = $('mfaCode').value.trim();
+  if (!/^\d{6}$/.test(code)) return msg('Type the 6 digits from your app.');
+  const { data: ch, error: e1 } = await sb.auth.mfa.challenge({ factorId }); if (e1) return msg(e1.message);
+  const { error } = await sb.auth.mfa.verify({ factorId, challengeId: ch.id, code }); if (error) return msg(error.message);
+  const { data: s } = await sb.auth.getSession(); token = s?.session?.access_token ?? token;   // the new login (with the code) is used right away
+  $('mfaBox').hidden = true; factorId = null; $('mfaCode').value = ''; msg(''); show();
+};
+$('mfaOut').onclick = () => sb.auth.signOut();
+
+// ---- launch checklist and risk watch
+async function readiness() {
+  const { checks = [] } = await api({ action: 'readiness' }), ICON = { ok: 'OK', warn: 'FIX', info: 'NOTE' };
+  $('ready').replaceChildren(...checks.map((c) => { const tr = el('tr'); tr.append(el('td', ICON[c.status], c.status === 'ok' ? 'good' : c.status === 'warn' ? 'bad' : ''), el('td', c.name), el('td', c.hint)); return tr; }));
+}
+$('alertBtn').onclick = async () => { try { const r = await api({ action: 'test_alert' }); msg(r.ok ? 'Test alert sent. Check Telegram.' : 'No alert was sent: Telegram is not set up yet (see LAUNCH_CHECKLIST.md).'); } catch (e) { msg(e.message); } };
+async function risk() {
+  const { addresses = [], pairs = [] } = await api({ action: 'risk' });
+  const lines = [];
+  for (const a of addresses) lines.push(el('p', `One payout address used by ${a.accounts} accounts (${a.users.join(', ')}): ${a.to_address}`, 'bad'));
+  for (const p of pairs) lines.push(el('p', `${p.a} and ${p.b} met ${p.matches} times: ${p.wins_a} to ${p.wins_b}${p.lopsided ? ' (one-sided, possible chip dumping)' : ''}`, p.lopsided ? 'bad' : ''));
+  $('risk').replaceChildren(...(lines.length ? lines : [el('p', 'Nothing suspicious found.')]));
+}

@@ -20,3 +20,21 @@ export async function userFrom(req: Request) {
   const { data, error } = await admin().auth.getUser(token);
   return error || !data.user ? null : data.user;
 }
+
+export const tokenOf = (req: Request) => (req.headers.get('Authorization') ?? '').replace('Bearer ', '');
+// "aal2" in the login token means the two-step code was entered. (The token itself is verified by userFrom.)
+export function aalOf(token: string): string {
+  try { return JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))).aal ?? ''; } catch { return ''; }
+}
+export const countryOf = (req: Request) => (req.headers.get('cf-ipcountry') ?? '').toUpperCase();
+// Countries listed in app_settings.blocked_countries cannot start matches or deposit. (Withdrawals stay open so nobody's money is trapped.)
+export async function geoBlocked(db: ReturnType<typeof admin>, req: Request): Promise<string | null> {
+  const { data } = await db.from('app_settings').select('key,value').in('key', ['blocked_countries', 'geo_strict']);
+  const s: Record<string, unknown> = {};
+  for (const r of data ?? []) s[r.key] = r.value;
+  const blocked = Array.isArray(s.blocked_countries) ? (s.blocked_countries as string[]).map((c) => String(c).toUpperCase()) : [];
+  const c = countryOf(req);
+  if (c && blocked.includes(c)) return 'This service is not available in your country.';
+  if (!c && s.geo_strict === true) return 'We could not determine your country, so this action is not available.';
+  return null;
+}

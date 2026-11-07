@@ -1,5 +1,5 @@
 // Join / leave a money table. Stake locking and colour dealing happen inside the database (quick_match).
-import { admin, cors, json, userFrom } from '../_shared/util.ts';
+import { admin, cors, json, userFrom, geoBlocked } from '../_shared/util.ts';
 import { createGame } from '../_shared/engine.js';
 
 const ORDER = ['red', 'green', 'yellow', 'blue'];
@@ -18,6 +18,8 @@ Deno.serve(async (req) => {
       return error ? json({ error: error.message }, 400) : json({ ok: true });
     }
     if (action !== 'join') return json({ error: 'bad action' }, 400);
+    const blocked = await geoBlocked(db, req);
+    if (blocked) return json({ error: blocked }, 403);
     if (![2, 4].includes(players) || !(Number(stake) > 0)) return json({ error: 'bad request' }, 400);
 
     const { data, error } = await db.rpc('quick_match', { p_user: user.id, p_stake: stake, p_players: players });
