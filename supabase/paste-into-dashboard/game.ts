@@ -64,12 +64,13 @@ function getLegalMoves(s, d) {
   return s.tokens[c].map((_, i) => i).filter((i) => target(s, c, i, d));
 }
 function nextTurn(s) {
-  let t = s.turn;
   const gone = (c) => s.winners.includes(c) || (s.out || []).includes(c);
-  do {
+  let t = s.turn;
+  for (let k = 0; k < s.colors.length; k++) {
     t = (t + 1) % s.colors.length;
-  } while (gone(s.colors[t]));
-  return { ...s, turn: t, dice: null, sixes: 0 };
+    if (!gone(s.colors[t])) return { ...s, turn: t, dice: null, sixes: 0 };
+  }
+  return { ...s, dice: null, sixes: 0 };
 }
 function roll(s, d) {
   s = { ...s, dice: d, sixes: d === 6 ? s.sixes + 1 : 0 };

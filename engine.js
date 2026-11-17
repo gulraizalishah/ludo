@@ -73,10 +73,13 @@ export function getLegalMoves(s, d) {
 }
 
 function nextTurn(s) {
-  let t = s.turn;
   const gone = (c) => s.winners.includes(c) || (s.out || []).includes(c);
-  do { t = (t + 1) % s.colors.length; } while (gone(s.colors[t]));
-  return { ...s, turn: t, dice: null, sixes: 0 };
+  let t = s.turn;
+  for (let k = 0; k < s.colors.length; k++) {                    // at most one lap, so this can never loop forever
+    t = (t + 1) % s.colors.length;
+    if (!gone(s.colors[t])) return { ...s, turn: t, dice: null, sixes: 0 };
+  }
+  return { ...s, dice: null, sixes: 0 };                         // nobody is left to play: stay put
 }
 
 export function roll(s, d) {

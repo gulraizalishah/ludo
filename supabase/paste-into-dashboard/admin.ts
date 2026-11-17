@@ -446,7 +446,7 @@ Deno.serve(async (req) => {
       const [a, m, r] = [Number(await set("withdraw_min_age_hours")), Number(await set("withdraw_min_matches")), Number(await set("withdraw_wager_ratio"))];
       add("Withdrawal safeguards on", a > 0 || m > 0 || r > 0, "At least one safeguard is active.", "All withdrawal safeguards are off (new-account wait, matches played, play-through). See LAUNCH_CHECKLIST.md.");
       add("First withdrawal reviewed", await set("first_withdrawal_manual") === true, "The first withdrawal of each account waits for you.", "Not enabled. Recommended at launch.", "info");
-      add("Alerts connected", !!(Deno.env.get("TELEGRAM_BOT_TOKEN") && Deno.env.get("TELEGRAM_CHAT_ID")), 'Telegram is connected (use "Send test alert").', "Telegram is not set up, so you will not hear about problems.");
+      add("Alerts connected", !!(Deno.env.get("TELEGRAM_BOT_TOKEN") && Deno.env.get("TELEGRAM_CHAT_ID")), 'Telegram is connected (use "Send test alert").', 'Postponed. Until alerts are set up, open this page every day: the timer line must say "running" and "Books balance" must say Yes.', "info");
       const bc = await set("blocked_countries");
       add("Blocked countries", Array.isArray(bc) && bc.length > 0, `Blocking: ${bc?.join(", ")}.`, "No countries are blocked.", "info");
       checks.push({ name: "Admin two-step login", status: "ok", hint: "You are logged in with a code, and the server insists on it." });

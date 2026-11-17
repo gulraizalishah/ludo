@@ -7,7 +7,7 @@ const TRACK = [...run(1,6,1,0,5), ...run(6,5,0,-1,6), ...run(7,0,1,0,2), ...run(
   ...run(13,8,-1,0,5), ...run(8,9,0,1,6), ...run(7,14,-1,0,2), ...run(6,13,0,-1,5), ...run(5,8,-1,0,6), ...run(0,7,0,-1,2)];
 const HOME = { red: run(1,7,1,0,5), green: run(7,1,0,1,5), yellow: run(13,7,-1,0,5), blue: run(7,13,0,-1,5) };
 const ORIGIN = { red: [0,0], green: [9,0], yellow: [9,9], blue: [0,9] };
-const SLOTS = [[1.5,1.5],[3.5,1.5],[1.5,3.5],[3.5,3.5]];
+const SLOTS = [[2,2],[4,2],[2,4],[4,4]];            // centred in the 6x6 base block
 const FIN = [[-.3,-.3],[.3,-.3],[-.3,.3],[.3,.3]];
 
 const $ = (id) => document.getElementById(id);
@@ -30,27 +30,34 @@ function setView(c) {                       // turn the board the shortest way, 
 }
 let S, bots = new Set(), note = '';
 
+const shade = (hex, k) => '#' + [1, 3, 5].map((i) => Math.round(parseInt(hex.slice(i, i + 2), 16) * k).toString(16).padStart(2, '0')).join('');
+const START_AT = { red: 0, green: 13, yellow: 26, blue: 39 };
+const armOf = ([x, y]) => (y < 6 ? 'green' : y > 8 ? 'blue' : x < 6 ? 'red' : 'yellow');   // which arm of the board a square lies in
 function buildBoard() {
   svg.innerHTML = '';
   root = el('g', { class: 'root' }, svg);
   viewColor = me ?? 'blue'; rotNow = ROT[viewColor]; root.style.transform = `rotate(${rotNow}deg)`;
   for (const c in ORIGIN) {
     const [x, y] = ORIGIN[c];
-    baseEl[c] = el('rect', { x, y, width: 6, height: 6, rx: .6, fill: COL[c] }, root);
-    el('rect', { x: x + 1, y: y + 1, width: 4, height: 4, rx: .5, fill: '#fff' }, root);
+    baseEl[c] = el('rect', { x, y, width: 6, height: 6, fill: COL[c] }, root);
+    el('rect', { x: x + .7, y: y + .7, width: 4.6, height: 4.6, rx: .8, fill: '#fff' }, root);
   }
-  TRACK.forEach(([x, y], i) => {
-    const start = Object.entries({ red: 0, green: 13, yellow: 26, blue: 39 }).find(([, v]) => v === i);
-    el('rect', { x, y, width: 1, height: 1, fill: start ? COL[start[0]] : '#fff', stroke: '#c9ced6', 'stroke-width': .04 }, root);
-    if (SAFE.includes(i) && !start) el('text', { x: x + .5, y: y + .72, 'text-anchor': 'middle', 'font-size': .7, fill: '#9aa3b2' }, root).textContent = '★';
+  TRACK.forEach(([x, y], i) => {                  // safe squares are tinted with their colour and carry a star
+    const start = Object.entries(START_AT).find(([, v]) => v === i);
+    const tint = start ? start[0] : SAFE.includes(i) ? armOf([x, y]) : null;
+    el('rect', { x, y, width: 1, height: 1, fill: tint ? COL[tint] : '#fff', stroke: '#e2e5ea', 'stroke-width': .04 }, root);
+    if (SAFE.includes(i)) el('text', { x: x + .5, y: y + .72, 'text-anchor': 'middle', 'font-size': .62, fill: '#fff' }, root).textContent = '★';
   });
   for (const c in HOME) HOME[c].forEach(([x, y]) => el('rect', { x, y, width: 1, height: 1, fill: COL[c], opacity: .85, stroke: '#fff', 'stroke-width': .04 }, root));
   [['red','6,6 6,9 7.5,7.5'],['green','6,6 9,6 7.5,7.5'],['yellow','9,6 9,9 7.5,7.5'],['blue','6,9 9,9 7.5,7.5']]
     .forEach(([c, pts]) => el('polygon', { points: pts, fill: COL[c] }, root));
-  for (const c of S.colors) for (let i = 0; i < 4; i++) {
-    const g = el('g', { class: 'tok' }, root);
-    el('circle', { r: .38, fill: COL[c], stroke: '#fff', 'stroke-width': .09 }, g);
-    el('circle', { r: .14, fill: '#fff', opacity: .55 }, g);
+  for (const c of S.colors) for (let i = 0; i < 4; i++) {        // pawns
+    const g = el('g', { class: 'tok' }, root), body = el('g', { class: 'body' }, g), light = COL[c], dark = shade(COL[c], .82);
+    el('ellipse', { class: 'foot', cx: 0, cy: .34, rx: .31, ry: .115, fill: dark, stroke: '#fff', 'stroke-width': .04 }, body);
+    el('path', { class: 'cone', d: 'M -.2 .32 C -.17 .07 -.1 -.02 -.08 -.09 L .08 -.09 C .1 -.02 .17 .07 .2 .32 Z', fill: dark, stroke: '#fff', 'stroke-width': .04, 'stroke-linejoin': 'round' }, body);
+    el('circle', { class: 'head', cx: 0, cy: -.25, r: .2, fill: light, stroke: '#fff', 'stroke-width': .045 }, body);
+    el('circle', { cx: 0, cy: -.25, r: .095, fill: 'none', stroke: '#fff', 'stroke-width': .03, opacity: .9 }, body);
+    el('circle', { cx: 0, cy: -.25, r: .035, fill: '#fff' }, body);
     g.addEventListener('click', () => onToken(c, i));
     tokEls[c + i] = g;
   }
@@ -88,6 +95,7 @@ function draw() {
   if (!online && over()) { $('rtitle').textContent = `${cap(S.winners[0])} wins!`; $('rorder').textContent = 'Finishing order: ' + S.winners.map(cap).join(' → '); }
   $('roll').disabled = !(human && S.dice == null && !busy);
   $('roll').style.setProperty('--c', COL[cur]);
+  $('pill').style.setProperty('--c', COL[cur]);
   $('status').textContent = over()
     ? 'Game over'
     : note || (human ? (S.dice == null ? `${cap(cur)}: tap the dice` : `${cap(cur)}: tap a glowing piece`) : `${cap(cur)} is thinking…`);

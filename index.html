@@ -49,18 +49,21 @@
     <footer class="legal"><a href="terms.html">Terms</a> · <a href="privacy.html">Privacy</a> · <a href="responsible.html">Responsible play</a></footer>
   </section>
   <section id="game" hidden>
-    <div class="bar"><div id="chips"></div><span id="timer"></span><button id="menu">Menu</button></div>
-    <div id="status"></div>
-    <div class="wrap">
-      <svg id="board" viewBox="0 0 15 15" role="img" aria-label="Ludo board"></svg>
-      <div id="bigdie" class="bigdie" hidden></div>
-    </div>
-    <div id="dbg"></div>
-    <div id="dbg2"></div>
-    <div class="dock"><button id="roll" aria-label="Roll the dice"><span class="die" id="die"></span></button></div>
-    <div id="result" hidden>
-      <div class="card"><h2 id="rtitle"></h2><p id="rorder"></p>
-        <button id="again">Play again</button><button id="home">Menu</button></div>
+    <div class="gamecard">
+      <button id="menu" aria-label="Back to the menu">Menu</button>
+      <div class="pill" id="pill"><i></i><span id="status"></span><span id="timer"></span></div>
+      <div class="wrap">
+        <svg id="board" viewBox="0 0 15 15" role="img" aria-label="Ludo board"></svg>
+        <div id="bigdie" class="bigdie" hidden></div>
+      </div>
+      <div class="dock"><button id="roll" aria-label="Roll the dice"><span class="die" id="die"></span></button></div>
+      <div id="chips"></div>
+      <div id="dbg"></div>
+      <div id="dbg2"></div>
+      <div id="result" hidden>
+        <div class="card"><h2 id="rtitle"></h2><p id="rorder"></p>
+          <button id="again">Play again</button><button id="home">Menu</button></div>
+      </div>
     </div>
   </section>
 </main>

@@ -24,7 +24,7 @@ summary { cursor: pointer; font-weight: 600; } ul { margin: 8px 0 4px; padding-l
 svg { width: 100%; height: auto; display: block; border-radius: 22px; background: #fff; border: 7px solid #22345a; box-shadow: 0 14px 40px -12px #000; touch-action: manipulation; }
 .tok { cursor: default; transition: transform .22s linear; filter: drop-shadow(0 .06px .05px rgba(0,0,0,.45)); }
 .tok.can { cursor: pointer; animation: pulse .8s ease-in-out infinite; }
-.tok.blk circle:first-child { stroke: #111; stroke-width: .16; }
+.tok.blk .head, .tok.blk .cone { stroke: #111; stroke-width: .12; }
 @keyframes pulse { 50% { transform: translate(var(--x), var(--y)) scale(1.18); filter: brightness(1.2); } }
 .dock { display: grid; place-items: center; margin-top: 14px; }
 #roll { width: 96px; height: 96px; border-radius: 24px; background: #fff; box-shadow: 0 8px 0 #c9d1e0, 0 14px 24px -8px #000; padding: 0; transition: transform .1s, box-shadow .1s; }
@@ -42,9 +42,9 @@ svg { width: 100%; height: auto; display: block; border-radius: 22px; background
 
 .wrap { position: relative; }
 .bigdie[hidden] { display: none; }
-.tok.hop circle { animation: hop .22s ease-in-out; transform-box: fill-box; transform-origin: center; }
+.tok.hop .body { animation: hop .22s ease-in-out; transform-box: fill-box; transform-origin: center; }
 @keyframes hop { 50% { transform: scale(1.5); } }  /* rises toward the viewer and lands: no sideways wobble */
-@media (prefers-reduced-motion: reduce) { .tok.hop circle { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .tok.hop .body { animation: none; } }
 #result[hidden] { display: none; }
 
 .bigdie { position: absolute; left: 50%; top: 50%; width: 78px; height: 78px; margin: -39px 0 0 -39px; z-index: 3; pointer-events: none; }
@@ -123,3 +123,18 @@ label.check { display: flex !important; gap: 10px; align-items: flex-start; } la
 /* plain text pages (terms, privacy, responsible play) */
 .doc { width: min(100%, 720px); padding: 18px 0 40px; line-height: 1.55; } .doc h1 { margin-bottom: 4px; } .doc h2 { margin: 22px 0 4px; font-size: 1.15rem; }
 .doc p, .doc li { color: #cdd6e6; } .doc .tpl { background: #3a2f12; border: 1px solid #7a6420; color: #ffe8a3; border-radius: 12px; padding: 10px 12px; font-size: .9rem; } .doc a { color: #8cc0ff; }
+
+/* ---- game screen layout: one dark card with the status pill, the board and the dice ---- */
+.gamecard { position: relative; background: #0e1531; border: 1px solid #1b2a55; border-radius: 28px; padding: 20px 16px 22px; display: grid; gap: 16px; justify-items: center; box-shadow: 0 18px 50px -16px #000; }
+.gamecard .wrap { width: 100%; }
+.gamecard svg { border: 6px solid #17275a; border-radius: 24px; box-shadow: none; }
+#menu { position: absolute; top: 14px; left: 14px; z-index: 2; padding: 5px 11px; font-size: .78rem; border-radius: 10px; background: transparent; border: 1px solid var(--line); color: var(--mute); }
+.pill { display: inline-flex; align-items: center; gap: 10px; padding: 8px 22px; border-radius: 999px; background: #121b3d; border: 2px solid var(--c, #e8483f); font-weight: 600; font-size: 1rem; min-height: 42px; }
+.pill i { width: 16px; height: 16px; border-radius: 50%; background: var(--c, #e8483f); flex: none; }
+.pill #status { margin: 0; min-height: 0; color: var(--ink); } .pill #timer { min-width: 0; text-align: left; }
+.pill #timer:not(:empty)::before { content: '·'; margin-right: 8px; color: var(--mute); }
+.gamecard .dock { margin: 0; } #roll { width: 108px; height: 108px; border-radius: 26px; }
+.gamecard #chips { flex: none; justify-content: center; gap: 6px; }
+.gamecard .chip { padding: 2px 9px; font-size: .72rem; border-width: 1.5px; opacity: .6; } .gamecard .chip.on { opacity: 1; box-shadow: none; }
+.gamecard #result { border-radius: 28px; }
+.tok.can .head, .tok.can .cone, .tok.can .foot { stroke-width: .09; }
